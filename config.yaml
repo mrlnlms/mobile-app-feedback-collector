@@ -1,0 +1,110 @@
+# ============================================================
+# Configuração do Pipeline de Coleta - Play Store Reviews
+# ============================================================
+
+# Bancos e seus parâmetros individuais
+banks:
+  nubank:
+    app_id: "com.nu.production"
+    apple_app_id: "814456780"
+    name: "Nubank"
+    start_date: "2024-11-01"        # Exceção: capturar lançamento Pix por Voz
+    keywords:
+      - "pix por voz"
+      - "pix voz"
+      - "pix com voz"
+      - "comando de voz"
+      - "falar pix"
+      - "enviar pix falando"
+      - "áudio pix"
+      - "ditado pix"
+      - "reconhecimento de voz"
+
+  itau:
+    app_id: "com.itau"
+    apple_app_id: "474505665"
+    name: "Itaú"
+    start_date: "2025-01-01"
+    keywords: []
+
+  banco_do_brasil:
+    app_id: "br.com.bb.android"
+    apple_app_id: "330984271"
+    name: "Banco do Brasil"
+    start_date: "2025-01-01"
+    keywords: []
+
+  bradesco:
+    app_id: "com.bradesco"
+    apple_app_id: "336954985"
+    name: "Bradesco"
+    start_date: "2025-01-01"
+    keywords: []
+
+  santander:
+    app_id: "com.santander.app"
+    apple_app_id: "613365711"
+    name: "Santander"
+    start_date: "2025-01-01"
+    keywords: []
+
+  inter:
+    app_id: "br.com.intermedium"
+    apple_app_id: "839711154"
+    name: "Inter"
+    start_date: "2025-01-01"
+    keywords: []
+
+  c6bank:
+    app_id: "com.c6bank.app"
+    apple_app_id: "1463463143"
+    name: "C6 Bank"
+    start_date: "2025-01-01"
+    keywords: []
+
+  picpay:
+    app_id: "com.picpay"
+    apple_app_id: "561524792"
+    name: "PicPay"
+    start_date: "2025-01-01"
+    keywords: []
+
+  mercado_pago:
+    app_id: "com.mercadopago.wallet"
+    apple_app_id: "925436649"
+    name: "Mercado Pago"
+    start_date: "2025-01-01"
+    keywords: []
+
+  btg_pactual:
+    app_id: "com.btg.pactual.banking"
+    apple_app_id: "1467956990"
+    name: "BTG Pactual"
+    start_date: "2025-01-01"
+    keywords: []
+
+  caixa:
+    app_id: "br.com.gabba.Caixa"
+    apple_app_id: "490813624"
+    name: "Caixa Econômica Federal"
+    start_date: "2025-01-01"
+    keywords: []
+
+# Parâmetros globais de coleta
+collection:
+  batch_size: 500
+  delay_seconds: 2
+  checkpoint_every: 5           # Salvar progresso a cada N lotes
+  max_retries: 5                # Tentativas com backoff exponencial
+  output_dir: "output"
+  checkpoint_dir: "checkpoints"
+
+# O coletor iOS usa os mesmos bancos e start_date, com diretórios separados.
+app_store:
+  country: "br"
+  sorts: ["mostrecent", "mosthelpful"]
+  max_pages_per_sort: 10
+  delay_seconds: 2
+  max_retries: 5
+  output_dir: "output_applestore"
+  checkpoint_dir: "checkpoints_applestore"
