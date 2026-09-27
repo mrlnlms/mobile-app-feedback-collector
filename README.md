@@ -8,7 +8,7 @@ O primeiro caso de uso foi **Pix por voz**. A infraestrutura criada para respond
 
 Em setembro de 2026, durante um trabalho para a Caixa sobre a possível implementação de Pix por voz, a equipe fez um benchmark e uma desk research em dois dias. Depois da apresentação, começou uma busca manual por comentários de usuários em redes sociais e nas lojas de aplicativos. Navegar pelas avaliações das lojas estava dificultando encontrar relatos sobre a função, especialmente os mais antigos.
 
-A pergunta inicial era simples: **seria possível baixar as avaliações e procurar nelas de uma forma útil?** O teste funcionou. Como o interesse incluía o período próximo ao lançamento do recurso pelo Nubank, a coleta da Play Store foi levada até novembro de 2024 para esse app e até janeiro de 2025 para os demais bancos. O trabalho encontrou seis mensagens explícitas sobre fazer Pix por voz ou áudio em um acervo de mais de um milhão de avaliações da Play Store.
+A pergunta inicial era simples: **seria possível baixar as avaliações e procurar nelas de uma forma útil?** O teste funcionou. Como o interesse incluía o período próximo ao lançamento do recurso pelo Nubank, a coleta da Play Store foi levada até novembro de 2024 para esse app e até janeiro de 2025 para os demais bancos. As avaliações coletadas puderam ser pesquisadas e relidas com seus IDs e datas, sem depender da navegação nas lojas.
 
 Essa entrega mostrou uma possibilidade maior: o esforço de coleta pode continuar servindo a novas perguntas. Quando os dados locais bastarem, basta consultá-los. Quando for necessário um período mais recente, é possível fazer outra rodada de coleta e atualizar a base.
 
@@ -56,23 +56,12 @@ Os bancos, IDs dos apps, datas iniciais e parâmetros de coleta ficam em [`confi
 venv/bin/python -m scripts.collect.google_play --bank nubank
 ```
 
-Para refazer a busca de Pix por voz nos dados **já armazenados**, sem acessar a loja:
-
-```bash
-venv/bin/python -m scripts.research.search_pix_audio
-```
-
-Esse comando refaz a busca exploratória por Pix, voz, áudio, WhatsApp e conversa e grava os candidatos em `data/derived/pix_voz/current/`. Para pesquisar outro assunto, o caminho é partir dos Parquets existentes e criar uma consulta adequada à nova pergunta. A coleta pode ser repetida depois, se a base precisar de avaliações mais recentes.
-
 O coletor da App Store roda separadamente:
 
 ```bash
 venv/bin/python -m scripts.collect.app_store --bank nubank
 ```
 
-## Onde ler mais
-
-- [Documentos do projeto](docs/README.md)
-- [Estrutura do acervo local](data/README.md)
+Os guias da [Google Play](docs/playstore-guide.md) e da [App Store](docs/appstore-guide.md) explicam a atualização, os relatórios e os limites de cobertura. Consultas sobre temas específicos partem dos Parquets existentes; o exemplo de Pix por voz e seu método ficam na pesquisa local em `private/research/pix-voz/`.
 
 O projeto começou como resposta a uma demanda urgente e está sendo estruturado a partir do que funcionou. Seu valor central é manter as avaliações acessíveis para perguntas futuras, preservando a possibilidade de voltar às mensagens que sustentam cada achado.

@@ -19,4 +19,4 @@ venv/bin/python -m scripts.archive_manifest
 
 Um clone do Git começa sem `raw/`, `derived/` e `runs/`; quem tiver uma cópia do acervo local pode colocá-la nesses caminhos e comparar os SHA-256 com `manifest.json`. Manter as bases fora do Git é uma decisão inicial de armazenamento, não uma afirmação de que o RSS da App Store ou a coleta da Play Store cobrem todo o período configurado.
 
-Guias de coleta, planos, pesquisas, registros antigos e mídia de trabalho ficam em `private/`, também ignorada pelo Git. A pasta [docs/](../docs/README.md) fica reservada a documentos de projeto versionáveis.
+Os guias de coleta da [Google Play](../docs/playstore-guide.md) e da [App Store](../docs/appstore-guide.md) são versionáveis. Planos, pesquisas específicas e mídia de trabalho ficam em `private/`, ignorada pelo Git.
