@@ -110,37 +110,23 @@ display(summary.sort_values("Média", ascending=False))
 
 ## Gráficos por banco
 
-Os quatro gráficos retomam os indicadores dos dois comparativos de referência. Cada valor é recalculado a partir dos Parquets locais, com o mesmo recorte e a mesma definição de **Média/mês** da tabela acima. Passe o cursor sobre as barras para ver os valores.
+Os quatro gráficos retomam os indicadores dos dois comparativos de referência. Cada valor é recalculado a partir dos Parquets locais, com o mesmo recorte e a mesma definição de **Média/mês** da tabela acima.
 
 ```{python}
-import plotly.graph_objects as go
-from IPython.display import HTML
+import matplotlib.pyplot as plt
 
-def chart_by_bank(column, axis_title, color, value_label, axis_max, include_plotlyjs=False):
+def chart_by_bank(column, axis_title, color, value_label, axis_max):
     values = summary[column].dropna().astype(float).sort_values()
-    labels = [value_label(value) for value in values]
-    figure = go.Figure(go.Bar(
-        x=values.to_numpy(),
-        y=values.index.tolist(),
-        orientation="h",
-        marker_color=color,
-        text=labels,
-        textposition="outside",
-        hovertemplate="%{y}<br>%{text}<extra></extra>",
-    ))
-    figure.update_layout(
-        template="plotly_white",
-        height=500,
-        margin=dict(l=165, r=55, t=20, b=60),
-        showlegend=False,
-        xaxis=dict(title=axis_title, range=[0, axis_max]),
-        yaxis=dict(title=None, automargin=True),
-    )
-    display(HTML(figure.to_html(
-        full_html=False,
-        include_plotlyjs=include_plotlyjs,
-        config={"responsive": True, "displayModeBar": False},
-    )))
+    figure, axis = plt.subplots(figsize=(9, 5.2))
+    bars = axis.barh(values.index, values.to_numpy(), color=color)
+    axis.bar_label(bars, labels=[value_label(value) for value in values], padding=4)
+    axis.set(xlim=(0, axis_max), xlabel=axis_title)
+    axis.grid(axis="x", color="#e5e7eb", linewidth=0.8)
+    axis.set_axisbelow(True)
+    for spine in axis.spines.values():
+        spine.set_visible(False)
+    figure.tight_layout()
+    plt.show()
 ```
 
 ### Proporção de notas 5 estrelas
@@ -148,7 +134,7 @@ def chart_by_bank(column, axis_title, color, value_label, axis_max, include_plot
 ```{python}
 chart_by_bank(
     "5 estrela(s) (%)", "Avaliações com 5 estrelas (%)", "#2563eb",
-    lambda value: f"{value:.1f}%", 100, include_plotlyjs=True,
+    lambda value: f"{value:.1f}%", 100,
 )
 ```
 
