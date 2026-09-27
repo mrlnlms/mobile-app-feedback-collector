@@ -8,6 +8,7 @@ import pandas as pd
 from google_play_scraper import Sort, reviews
 from datetime import datetime
 import time
+from pathlib import Path
 
 # ============================================================
 # PARÂMETROS DA PoC (valores baixos para teste rápido)
@@ -146,11 +147,13 @@ if __name__ == "__main__":
         df_all, df_filtered = filter_and_structure(raw, KEYWORDS)
 
         # 3. Exportação
-        df_all.to_csv("poc_reviews_all.csv", index=False)
-        df_filtered.to_csv("poc_reviews_pix_voz.csv", index=False)
+        output_dir = Path("data/derived/poc")
+        output_dir.mkdir(parents=True, exist_ok=True)
+        df_all.to_csv(output_dir / "poc_reviews_all.csv", index=False)
+        df_filtered.to_csv(output_dir / "poc_reviews_pix_voz.csv", index=False)
         print(f"\n💾 Arquivos exportados:")
-        print(f"   - poc_reviews_all.csv ({len(df_all)} registros)")
-        print(f"   - poc_reviews_pix_voz.csv ({len(df_filtered)} registros)")
+        print(f"   - {output_dir / 'poc_reviews_all.csv'} ({len(df_all)} registros)")
+        print(f"   - {output_dir / 'poc_reviews_pix_voz.csv'} ({len(df_filtered)} registros)")
 
         # 4. Resumo
         show_summary(df_all, df_filtered)

@@ -26,16 +26,18 @@ Trazer os registros para arquivos locais muda a forma de trabalhar: é possível
 
 | Camada | O que faz | Arquivos principais |
 |---|---|---|
-| Coleta e acervo | Busca avaliações, guarda uma base por banco e permite novas rodadas | `collector.py`, `collector_applestore.py`, `config.yaml`, `output/`, `output_applestore/` |
-| Consulta e análise | Pesquisa as bases locais para responder a uma pergunta | `filter.py`, `analyze_pix_audio.py`, `search_pix_audio.py`, relatórios e CSVs de resultados |
+| Coleta e acervo | Busca avaliações, guarda uma base por banco e permite novas rodadas | `scripts/collect/`, `config.yaml`, `data/raw/` |
+| Consulta e análise | Pesquisa as bases locais para responder a uma pergunta | `scripts/research/`, resultados locais em `private/research/` e saídas em `data/derived/` |
 
 Os arquivos `reviews_raw.parquet` são o ponto de partida para outras pesquisas. Os scripts de Pix por voz registram **uma investigação feita com esse acervo**, não um limite para os temas que podem ser pesquisados.
 
 ## O que existe hoje
 
-- **Google Play:** avaliações de 11 apps bancários em `output/<banco>/reviews_raw.parquet`. O coletor usa a ordenação por mais recentes, interrompe a busca ao passar da data configurada e combina novas coletas com a base local pelo ID da avaliação.
-- **App Store:** avaliações dos mesmos 11 apps em `output_applestore/<banco>/reviews_raw.parquet`, obtidas pelo RSS público brasileiro. Essa fonte oferece uma amostra menor e cobertura histórica desigual entre os bancos.
-- **Primeira pesquisa:** seis comentários explícitos sobre Pix por voz ou áudio, com texto e ID; resultado na App Store; e guia para explorar outros candidatos.
+- **Google Play:** avaliações de 11 apps bancários em `data/raw/google_play/<banco>/reviews_raw.parquet`. O coletor usa a ordenação por mais recentes, interrompe a busca ao passar da data configurada e combina novas coletas com a base local pelo ID da avaliação.
+- **App Store:** avaliações dos mesmos 11 apps em `data/raw/app_store/<banco>/reviews_raw.parquet`, obtidas pelo RSS público brasileiro. Essa fonte oferece uma amostra menor e cobertura histórica desigual entre os bancos.
+- **Primeira pesquisa:** investigação de Pix por voz ou áudio, com resultados guardados localmente em `private/research/pix-voz/`.
+
+As bases e saídas completas ficam em `data/` na raiz, em pastas ignoradas pelo Git. Planos, pesquisas específicas e mídia de trabalho ficam em `private/`, também ignorada. O [contrato do acervo local](data/README.md) explica os caminhos e o manifesto versionado; uma cópia só do Git contém código, configuração e documentação operacional, sem os Parquets.
 
 Encontrar uma avaliação antiga não garante que todas as avaliações entre ela e hoje estejam disponíveis. Para interpretar ausências ou comparar períodos, consulte os relatórios de coleta e a cobertura efetivamente observada em cada fonte.
 
@@ -51,25 +53,26 @@ venv/bin/python -m pip install -r requirements.txt
 Os bancos, IDs dos apps, datas iniciais e parâmetros de coleta ficam em [`config.yaml`](config.yaml). Para coletar ou atualizar **um banco** da Play Store:
 
 ```bash
-venv/bin/python collector.py --bank nubank
+venv/bin/python -m scripts.collect.google_play --bank nubank
 ```
 
 Para refazer a busca de Pix por voz nos dados **já armazenados**, sem acessar a loja:
 
 ```bash
-venv/bin/python search_pix_audio.py
+venv/bin/python -m scripts.research.search_pix_audio
 ```
 
-Esse comando refaz a busca exploratória por Pix, voz, áudio, WhatsApp e conversa e grava os candidatos em `output/pix_audio_review/`. Para pesquisar outro assunto, o caminho é partir dos Parquets existentes e criar uma consulta adequada à nova pergunta. A coleta pode ser repetida depois, se a base precisar de avaliações mais recentes.
+Esse comando refaz a busca exploratória por Pix, voz, áudio, WhatsApp e conversa e grava os candidatos em `data/derived/pix_voz/current/`. Para pesquisar outro assunto, o caminho é partir dos Parquets existentes e criar uma consulta adequada à nova pergunta. A coleta pode ser repetida depois, se a base precisar de avaliações mais recentes.
 
 O coletor da App Store roda separadamente:
 
 ```bash
-venv/bin/python collector_applestore.py --bank nubank
+venv/bin/python -m scripts.collect.app_store --bank nubank
 ```
 
 ## Onde ler mais
 
 - [Documentos do projeto](docs/README.md)
+- [Estrutura do acervo local](data/README.md)
 
 O projeto começou como resposta a uma demanda urgente e está sendo estruturado a partir do que funcionou. Seu valor central é manter as avaliações acessíveis para perguntas futuras, preservando a possibilidade de voltar às mensagens que sustentam cada achado.

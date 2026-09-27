@@ -1,6 +1,6 @@
 """Repete um banco da App Store sem modificar a base principal.
 
-Uso: venv/bin/python probe_applestore.py --bank caixa
+Uso: venv/bin/python -m scripts.probe.app_store --bank caixa
 """
 
 import argparse
@@ -13,7 +13,7 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
-from collector_applestore import collect_bank, save_json_atomic
+from scripts.collect.app_store import collect_bank, save_json_atomic
 
 
 def sha256(path):
@@ -85,6 +85,7 @@ def run_probe(bank_key, config, probe_parent):
     run_root.mkdir(parents=True, exist_ok=False)
     settings["output_dir"] = str(run_root)
     settings["checkpoint_dir"] = str(run_root / "checkpoints")
+    settings["snapshot_dir"] = str(run_root / "snapshots")
     repeated = run_root / bank_key / "reviews_raw.parquet"
     manifest_path = run_root / "probe.json"
     manifest = {
@@ -100,7 +101,7 @@ def run_probe(bank_key, config, probe_parent):
     try:
         report = collect_bank(bank_key, banks[bank_key], settings, allow_empty=True)
         comparison = compare(original, repeated, settings["sorts"])
-        previous = latest_bank_report(canonical_root, banks[bank_key]["apple_app_id"])
+        previous = latest_bank_report(Path(config["app_store"]["report_dir"]), banks[bank_key]["apple_app_id"])
         comparison["paginas_por_sort_original"] = previous[2].get("paginas_por_sort") if previous else None
         comparison["paginas_por_sort_nova"] = report["paginas_por_sort"]
         comparison["relatorio_original"] = str(previous[1]) if previous else None
@@ -137,7 +138,7 @@ def main():
     parser.add_argument("--config", default="config.yaml")
     args = parser.parse_args()
     config = yaml.safe_load(Path(args.config).read_text(encoding="utf-8"))
-    probe_parent = Path(config["app_store"]["output_dir"]) / "experiments"
+    probe_parent = Path(config["app_store"]["probe_dir"])
     run_probe(args.bank, config, probe_parent)
 
 

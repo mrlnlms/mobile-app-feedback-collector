@@ -1,0 +1,20 @@
+/private/
+/venv/
+**/__pycache__/
+*.py[cod]
+.DS_Store
+
+# Local archive in the root data directory; data/README.md and manifests stay tracked.
+/data/raw/
+/data/derived/
+/data/runs/
+
+# Legacy locations until their contents are classified and moved.
+/output/
+/output_applestore/
+/checkpoints/
+/checkpoints_applestore/
+/poc_reviews_*.csv
+
+# Raw review bases stay local even if placed elsewhere.
+*.parquet

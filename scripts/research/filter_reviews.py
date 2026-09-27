@@ -5,9 +5,8 @@ Filtra reviews já coletados por keywords do config.yaml.
 Permite re-filtrar sem precisar re-coletar.
 
 Uso:
-    python filter.py --bank nubank
-    python filter.py --bank nubank --keywords "pix voz" "comando de voz"
-    python filter.py --all
+    venv/bin/python -m scripts.research.filter_reviews --bank nubank
+    venv/bin/python -m scripts.research.filter_reviews --all
 """
 
 import argparse
@@ -24,15 +23,16 @@ def load_config(config_path="config.yaml"):
         return yaml.safe_load(f)
 
 
-def filter_reviews(bank_key, bank_config, output_dir, custom_keywords=None):
+def filter_reviews(bank_key, bank_config, output_dir, derived_dir, custom_keywords=None):
     """Filtra reviews de um banco por keywords."""
     bank_name = bank_config.get("name", bank_key)
     output_dir = Path(output_dir) / bank_key
+    derived_dir = Path(derived_dir) / bank_key
 
     raw_file = output_dir / "reviews_raw.parquet"
     if not raw_file.exists():
         print(f"⚠️  Arquivo não encontrado: {raw_file}")
-        print(f"   Execute primeiro: python collector.py --bank {bank_key}")
+        print(f"   Execute primeiro: venv/bin/python -m scripts.collect.google_play --bank {bank_key}")
         return None
 
     df = pd.read_parquet(raw_file)
@@ -57,7 +57,8 @@ def filter_reviews(bank_key, bank_config, output_dir, custom_keywords=None):
               f"({len(df_filtered)/len(df)*100:.1f}%)")
 
     # Exportar CSV filtrado
-    filtered_file = output_dir / "reviews_filtered.csv"
+    derived_dir.mkdir(parents=True, exist_ok=True)
+    filtered_file = derived_dir / "reviews_filtered.csv"
     df_filtered.to_csv(filtered_file, index=False)
     print(f"   💾 Salvo: {filtered_file}")
 
@@ -95,7 +96,7 @@ def filter_reviews(bank_key, bank_config, output_dir, custom_keywords=None):
         )
 
     import json
-    summary_file = output_dir / "summary.json"
+    summary_file = derived_dir / "summary.json"
     with open(summary_file, "w", encoding="utf-8") as f:
         json.dump(summary, f, ensure_ascii=False, indent=2, default=str)
     print(f"   📄 Summary: {summary_file}")
@@ -118,6 +119,7 @@ def main():
     config = load_config(args.config)
     banks = config["banks"]
     output_dir = config["collection"]["output_dir"]
+    derived_dir = config["collection"]["derived_dir"]
 
     if args.all:
         bank_keys = list(banks.keys())
@@ -130,7 +132,7 @@ def main():
                 sys.exit(1)
 
     for bank_key in bank_keys:
-        filter_reviews(bank_key, banks[bank_key], output_dir, args.keywords)
+        filter_reviews(bank_key, banks[bank_key], output_dir, derived_dir, args.keywords)
 
     print("\n✅ Filtragem concluída!")
 

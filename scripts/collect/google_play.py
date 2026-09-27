@@ -8,9 +8,8 @@ Coleta avaliações de apps bancários com resiliência:
 - Relatório final com erros e estatísticas
 
 Uso:
-    python collector.py --bank nubank
-    python collector.py --bank nubank itau banco_do_brasil
-    python collector.py --all
+    venv/bin/python -m scripts.collect.google_play --bank nubank
+    venv/bin/python -m scripts.collect.google_play --all
 """
 
 import argparse
@@ -56,7 +55,7 @@ def load_config(config_path="config.yaml"):
         return yaml.safe_load(f)
 
 
-def write_final_base(new_reviews, output_file, start_date):
+def write_final_base(new_reviews, output_file, start_date, snapshot_dir=None):
     """Archive the old Parquet, then publish the merged base atomically."""
     frames = [new_reviews]
     if output_file.exists():
@@ -71,7 +70,7 @@ def write_final_base(new_reviews, output_file, start_date):
     temporary_file = output_file.with_name("reviews_raw.tmp.parquet")
     merged.to_parquet(temporary_file, index=False)
     if output_file.exists():
-        snapshots = output_file.parent / "snapshots"
+        snapshots = Path(snapshot_dir) if snapshot_dir is not None else output_file.parent / "snapshots"
         snapshots.mkdir(parents=True, exist_ok=True)
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         snapshot = snapshots / f"reviews_raw_before_recollect_{stamp}.parquet"
@@ -350,7 +349,10 @@ def collect_bank(bank_key, bank_config, global_config):
     )
 
     output_file = output_dir / "reviews_raw.parquet"
-    write_final_base(df_clean, output_file, start_date)
+    write_final_base(
+        df_clean, output_file, start_date,
+        Path(global_config["snapshot_dir"]) / bank_key,
+    )
     checkpoint.cleanup()
 
     if report["status"] == "em andamento":
@@ -365,6 +367,7 @@ def collect_bank(bank_key, bank_config, global_config):
 def generate_report(reports, output_dir):
     """Gera relatório final consolidado."""
     output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     print()
@@ -499,7 +502,7 @@ def main():
             logger.warning("\n⛔ Interrompido pelo usuário (Ctrl+C)")
             # Relatório parcial
             if reports:
-                generate_report(reports, global_config["output_dir"])
+                generate_report(reports, global_config["report_dir"])
             sys.exit(130)
         except Exception as e:
             logger.error(f"❌ Erro fatal ao coletar {bank_key}: {e}")
@@ -520,7 +523,7 @@ def main():
             })
 
     # Relatório final
-    success = generate_report(reports, global_config["output_dir"])
+    success = generate_report(reports, global_config["report_dir"])
 
     sys.exit(0 if success else 1)
 

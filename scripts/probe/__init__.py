@@ -1,0 +1,1 @@
+"""Experimentos isolados de cobertura."""

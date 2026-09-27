@@ -96,8 +96,11 @@ collection:
   delay_seconds: 2
   checkpoint_every: 5           # Salvar progresso a cada N lotes
   max_retries: 5                # Tentativas com backoff exponencial
-  output_dir: "output"
-  checkpoint_dir: "checkpoints"
+  output_dir: "data/raw/google_play"
+  checkpoint_dir: "data/runs/google_play/checkpoints"
+  report_dir: "data/runs/google_play/reports"
+  snapshot_dir: "data/runs/google_play/snapshots"
+  derived_dir: "data/derived/google_play/current"
 
 # O coletor iOS usa os mesmos bancos e start_date, com diretórios separados.
 app_store:
@@ -106,5 +109,11 @@ app_store:
   max_pages_per_sort: 10
   delay_seconds: 2
   max_retries: 5
-  output_dir: "output_applestore"
-  checkpoint_dir: "checkpoints_applestore"
+  output_dir: "data/raw/app_store"
+  checkpoint_dir: "data/runs/app_store/checkpoints"
+  report_dir: "data/runs/app_store/reports"
+  snapshot_dir: "data/runs/app_store/snapshots"
+  probe_dir: "data/runs/app_store/experiments"
+
+research:
+  pix_voz_audit_dir: "data/derived/pix_voz/current"

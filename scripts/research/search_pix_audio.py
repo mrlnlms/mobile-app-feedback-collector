@@ -166,7 +166,7 @@ def search_bank(bank, bank_config, source, destination):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", default="config.yaml")
-    parser.add_argument("--output", default="output/pix_audio_review")
+    parser.add_argument("--output", help="Pasta de saída; padrão definido em config.yaml")
     parser.add_argument("--bank", nargs="+", help="Bancos específicos; padrão: todos")
     args = parser.parse_args()
     with open(args.config, encoding="utf-8") as stream:
@@ -176,7 +176,7 @@ def main():
     unknown = [key for key in keys if key not in banks]
     if unknown:
         parser.error(f"Banco(s) desconhecido(s): {', '.join(unknown)}")
-    destination = Path(args.output)
+    destination = Path(args.output or config["research"]["pix_voz_audit_dir"])
     destination.mkdir(parents=True, exist_ok=True)
     summaries = []
     for key in keys:

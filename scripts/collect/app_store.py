@@ -1,7 +1,7 @@
 """Coleta reviews do RSS público da App Store para os bancos em config.yaml.
 
-Uso: venv/bin/python collector_applestore.py --bank nubank
-     venv/bin/python collector_applestore.py --all
+Uso: venv/bin/python -m scripts.collect.app_store --bank nubank
+     venv/bin/python -m scripts.collect.app_store --all
 """
 
 import argparse
@@ -87,7 +87,7 @@ def save_json_atomic(path, data):
     os.replace(temp, path)
 
 
-def publish(records, output_file, start_date):
+def publish(records, output_file, start_date, snapshot_dir=None):
     frame = pd.DataFrame(records, columns=COLS)
     frame["data_avaliacao"] = pd.to_datetime(frame["data_avaliacao"], utc=True)
     # A data do filtro é a data civil informada pelo feed, antes da conversão para UTC.
@@ -103,8 +103,8 @@ def publish(records, output_file, start_date):
     temp = output_file.with_name("reviews_raw.tmp.parquet")
     frame.to_parquet(temp, index=False)
     if output_file.exists():
-        snapshots = output_file.parent / "snapshots"
-        snapshots.mkdir(exist_ok=True)
+        snapshots = Path(snapshot_dir) if snapshot_dir is not None else output_file.parent / "snapshots"
+        snapshots.mkdir(parents=True, exist_ok=True)
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         shutil.copy2(output_file, snapshots / f"reviews_raw_before_recollect_{stamp}.parquet")
     os.replace(temp, output_file)
@@ -189,7 +189,7 @@ def collect_bank(key, bank, settings, allow_empty=False):
             unique[review["id_review"]] = review
     dated = [r for r in unique.values() if datetime.fromisoformat(r["data_avaliacao"].replace("Z", "+00:00")).date() >= start_date]
     output_file = Path(settings["output_dir"]) / key / "reviews_raw.parquet"
-    final = publish(dated, output_file, start_date)
+    final = publish(dated, output_file, start_date, Path(settings["snapshot_dir"]) / key)
     checkpoint.unlink()
     dates = [datetime.fromisoformat(r["data_avaliacao"].replace("Z", "+00:00")).date() for r in unique.values()]
     recent = [datetime.fromisoformat(r["data_avaliacao"].replace("Z", "+00:00")).date()
@@ -237,7 +237,7 @@ def main():
             failed = True
             log.exception("Falha na coleta de %s", key)
             reports.append({"banco": banks[key].get("name", key), "apple_app_id": banks[key].get("apple_app_id"), "status": "interrompido por erro", "erro": str(exc)})
-    report_path = Path(settings["output_dir"]) / f"report_{datetime.now():%Y%m%d_%H%M%S}.json"
+    report_path = Path(settings["report_dir"]) / f"report_{datetime.now():%Y%m%d_%H%M%S}.json"
     save_json_atomic(report_path, reports)
     log.info("Relatório: %s", report_path)
     return 1 if failed else 0

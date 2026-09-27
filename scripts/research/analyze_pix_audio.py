@@ -87,6 +87,7 @@ def main():
     if args.all:
         keys = [key for key in keys if key != "nubank"]
     out_root = Path(config["collection"]["output_dir"])
+    derived_root = Path(config["collection"]["derived_dir"])
     report = {
         "metodo": "mesmas familias de busca documentadas para Nubank; busca lexical, triagem humana necessária",
         "data_inicial": args.from_date,
@@ -120,7 +121,9 @@ def main():
             for row in hit_matrix.to_numpy(dtype=bool)
         ]
         candidates["triagem"] = "revisao_manual_necessaria"
-        candidates.to_csv(out_root / key / "pix_voz_audio_candidates.csv", index=False)
+        destination = derived_root / key / "pix_voz_audio_candidates.csv"
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        candidates.to_csv(destination, index=False)
 
         counts = {name: int(mask.sum()) for name, mask in masks.items()}
         report["bancos"][key] = {
@@ -129,12 +132,13 @@ def main():
             "reviews_no_periodo": int(len(df)),
             "contagens_por_busca": counts,
             "candidatos_unicos_para_triagem": int(candidate_mask.sum()),
-            "csv_candidatos": str(out_root / key / "pix_voz_audio_candidates.csv"),
+            "csv_candidatos": str(destination),
         }
         print(f"{key}: {len(df):,} reviews | candidatos {int(candidate_mask.sum())} | "
               + ", ".join(f"{name}={count}" for name, count in counts.items()))
 
-    path = out_root / "pix_voz_audio_search.json"
+    derived_root.mkdir(parents=True, exist_ok=True)
+    path = derived_root / "pix_voz_audio_search.json"
     path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"Resumo por banco e consulta: {path}")
 

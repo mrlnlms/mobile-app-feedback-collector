@@ -1,0 +1,280 @@
+{
+  "generated_at": "2026-09-27T07:25:04.794941-03:00",
+  "files": [
+    {
+      "path": "data/raw/google_play/nubank/reviews_raw.parquet",
+      "kind": "primary",
+      "platform": "google_play",
+      "bank": "nubank",
+      "size_bytes": 21003734,
+      "sha256": "89aaf4ad80a040b0f3c57ff9308c96e9b91fd435ee92ec7f550c5ccd49ea1634",
+      "reviews": 207278,
+      "oldest_utc": "2024-11-01T00:17:28+00:00",
+      "newest_utc": "2026-09-22T16:38:58+00:00"
+    },
+    {
+      "path": "data/raw/google_play/itau/reviews_raw.parquet",
+      "kind": "primary",
+      "platform": "google_play",
+      "bank": "itau",
+      "size_bytes": 14377237,
+      "sha256": "9ddf6e0c3e763e06a35db0b242995135a4eb24a6a0b591d61063e2ba30f47d51",
+      "reviews": 90146,
+      "oldest_utc": "2025-01-01T00:21:08+00:00",
+      "newest_utc": "2026-09-22T18:25:21+00:00"
+    },
+    {
+      "path": "data/raw/google_play/banco_do_brasil/reviews_raw.parquet",
+      "kind": "primary",
+      "platform": "google_play",
+      "bank": "banco_do_brasil",
+      "size_bytes": 17179443,
+      "sha256": "de15310bfcec659274cf73edc3ed7ee2aa2aa6fb44cb24765cc310c3e48dd8e1",
+      "reviews": 145785,
+      "oldest_utc": "2025-01-01T00:34:52+00:00",
+      "newest_utc": "2026-09-22T21:17:56+00:00"
+    },
+    {
+      "path": "data/raw/google_play/bradesco/reviews_raw.parquet",
+      "kind": "primary",
+      "platform": "google_play",
+      "bank": "bradesco",
+      "size_bytes": 8033092,
+      "sha256": "69d4a0dd15f8ddc925ef5f510510f6d7590acad279a1ec596ae641644043bd8f",
+      "reviews": 61167,
+      "oldest_utc": "2025-01-01T00:00:11+00:00",
+      "newest_utc": "2026-09-22T21:36:03+00:00"
+    },
+    {
+      "path": "data/raw/google_play/santander/reviews_raw.parquet",
+      "kind": "primary",
+      "platform": "google_play",
+      "bank": "santander",
+      "size_bytes": 6485655,
+      "sha256": "9d28f71257d091170575a9a4f32ff7e242e1e882e1e0287ce647b91806b9c483",
+      "reviews": 63800,
+      "oldest_utc": "2025-01-01T01:52:41+00:00",
+      "newest_utc": "2026-09-22T21:40:02+00:00"
+    },
+    {
+      "path": "data/raw/google_play/inter/reviews_raw.parquet",
+      "kind": "primary",
+      "platform": "google_play",
+      "bank": "inter",
+      "size_bytes": 12438260,
+      "sha256": "f28b48afa8080b90baba09bddece8644cf630d623e2c0bf39e9e1a24124f9c18",
+      "reviews": 79852,
+      "oldest_utc": "2025-01-01T00:07:18+00:00",
+      "newest_utc": "2026-09-22T21:51:06+00:00"
+    },
+    {
+      "path": "data/raw/google_play/c6bank/reviews_raw.parquet",
+      "kind": "primary",
+      "platform": "google_play",
+      "bank": "c6bank",
+      "size_bytes": 4137152,
+      "sha256": "0bcc50618af4580c80dd172e46a6f7516fa6bcbc7ff43fa626cb19d224da06ca",
+      "reviews": 33419,
+      "oldest_utc": "2025-01-01T01:09:23+00:00",
+      "newest_utc": "2026-09-22T22:09:27+00:00"
+    },
+    {
+      "path": "data/raw/google_play/picpay/reviews_raw.parquet",
+      "kind": "primary",
+      "platform": "google_play",
+      "bank": "picpay",
+      "size_bytes": 19006965,
+      "sha256": "f86b88dae1137f6f110ac21100ce89425b91ae4cf11206cad269702e4c036026",
+      "reviews": 176051,
+      "oldest_utc": "2025-01-01T00:12:16+00:00",
+      "newest_utc": "2026-09-23T09:44:37+00:00"
+    },
+    {
+      "path": "data/raw/google_play/mercado_pago/reviews_raw.parquet",
+      "kind": "primary",
+      "platform": "google_play",
+      "bank": "mercado_pago",
+      "size_bytes": 15537095,
+      "sha256": "99cd89264bd5d0c008765b62309faa1c8c77a27758eec826a9fef39e9381a5e4",
+      "reviews": 177726,
+      "oldest_utc": "2025-01-01T01:15:14+00:00",
+      "newest_utc": "2026-09-22T22:36:37+00:00"
+    },
+    {
+      "path": "data/raw/google_play/btg_pactual/reviews_raw.parquet",
+      "kind": "primary",
+      "platform": "google_play",
+      "bank": "btg_pactual",
+      "size_bytes": 715681,
+      "sha256": "25675c84396736b0d28a831692bcbb59c90c4a63b707f59fc00d782492b79176",
+      "reviews": 4415,
+      "oldest_utc": "2025-01-01T10:49:05+00:00",
+      "newest_utc": "2026-09-22T22:43:17+00:00"
+    },
+    {
+      "path": "data/raw/google_play/caixa/reviews_raw.parquet",
+      "kind": "primary",
+      "platform": "google_play",
+      "bank": "caixa",
+      "size_bytes": 20437914,
+      "sha256": "291d83cc38bee4c0e0a4fe9407d000de57aab7fcb127e50d1c1414071821961b",
+      "reviews": 220729,
+      "oldest_utc": "2025-01-01T00:19:59+00:00",
+      "newest_utc": "2026-09-23T09:04:10+00:00"
+    },
+    {
+      "path": "data/runs/google_play/snapshots/caixa/reviews_raw_before_recollect_20260924_093328_063762.parquet",
+      "kind": "snapshot",
+      "platform": "google_play",
+      "bank": "caixa",
+      "size_bytes": 9398148,
+      "sha256": "7cf390f7f909a37b5a517f267f6561dc320118a7816b4a874c0c1249f2c728d4",
+      "reviews": 96500,
+      "oldest_utc": "2025-09-08T12:49:24+00:00",
+      "newest_utc": "2026-09-22T22:09:07+00:00"
+    },
+    {
+      "path": "data/runs/google_play/snapshots/picpay/reviews_raw_before_recollect_20260924_100448_370781.parquet",
+      "kind": "snapshot",
+      "platform": "google_play",
+      "bank": "picpay",
+      "size_bytes": 8601695,
+      "sha256": "f99a92a5d4eb29d428dbc9a9784b964e869e3ac102460eb17296d4c379e103cd",
+      "reviews": 84000,
+      "oldest_utc": "2025-08-21T13:24:30+00:00",
+      "newest_utc": "2026-09-22T22:27:23+00:00"
+    },
+    {
+      "path": "data/raw/app_store/nubank/reviews_raw.parquet",
+      "kind": "primary",
+      "platform": "app_store",
+      "bank": "nubank",
+      "size_bytes": 52649,
+      "sha256": "f6654996e50a4a568ffa57e165e0404be068fe007c331fa2bc015169c546eea2",
+      "reviews": 334,
+      "oldest_utc": "2024-11-09T20:56:37+00:00",
+      "newest_utc": "2026-09-23T04:13:48+00:00"
+    },
+    {
+      "path": "data/raw/app_store/itau/reviews_raw.parquet",
+      "kind": "primary",
+      "platform": "app_store",
+      "bank": "itau",
+      "size_bytes": 49517,
+      "sha256": "c3a4ffead15aa75edc5f5b7107abe9f47431488ab02eccc9c9d8c4d39c94b95b",
+      "reviews": 450,
+      "oldest_utc": "2026-08-12T15:09:12+00:00",
+      "newest_utc": "2026-09-23T10:58:56+00:00"
+    },
+    {
+      "path": "data/raw/app_store/banco_do_brasil/reviews_raw.parquet",
+      "kind": "primary",
+      "platform": "app_store",
+      "bank": "banco_do_brasil",
+      "size_bytes": 19074,
+      "sha256": "ef84d8aee0a9edf6e9c8b9888202e5a9dc377eb3ecd101a9b2403f08b9a4e59f",
+      "reviews": 156,
+      "oldest_utc": "2026-04-01T15:33:38+00:00",
+      "newest_utc": "2026-09-23T11:23:54+00:00"
+    },
+    {
+      "path": "data/raw/app_store/bradesco/reviews_raw.parquet",
+      "kind": "primary",
+      "platform": "app_store",
+      "bank": "bradesco",
+      "size_bytes": 45549,
+      "sha256": "e22493a66d34d894971b483dbe946a301837e1fd50dd4ebf0287baf987396aeb",
+      "reviews": 258,
+      "oldest_utc": "2025-01-25T11:40:12+00:00",
+      "newest_utc": "2026-09-23T02:33:10+00:00"
+    },
+    {
+      "path": "data/raw/app_store/santander/reviews_raw.parquet",
+      "kind": "primary",
+      "platform": "app_store",
+      "bank": "santander",
+      "size_bytes": 50567,
+      "sha256": "f78c810308ba8e05ebed2a11863fd240ca428babf8b1dbda6e1259268544a109",
+      "reviews": 269,
+      "oldest_utc": "2025-06-17T05:15:42+00:00",
+      "newest_utc": "2026-09-23T05:14:11+00:00"
+    },
+    {
+      "path": "data/raw/app_store/inter/reviews_raw.parquet",
+      "kind": "primary",
+      "platform": "app_store",
+      "bank": "inter",
+      "size_bytes": 66147,
+      "sha256": "0a33d5a8a9c3524bec1a8e6850556bb1e62194d3ebaea300f9f656fbd32d22cf",
+      "reviews": 547,
+      "oldest_utc": "2025-01-03T14:37:54+00:00",
+      "newest_utc": "2026-09-23T01:12:47+00:00"
+    },
+    {
+      "path": "data/raw/app_store/c6bank/reviews_raw.parquet",
+      "kind": "primary",
+      "platform": "app_store",
+      "bank": "c6bank",
+      "size_bytes": 48184,
+      "sha256": "dfb646320fa9798b18c6f73f268423218abbccabcddf5a4d80c36a28991b9d94",
+      "reviews": 240,
+      "oldest_utc": "2025-01-01T11:41:08+00:00",
+      "newest_utc": "2026-09-22T19:40:08+00:00"
+    },
+    {
+      "path": "data/raw/app_store/picpay/reviews_raw.parquet",
+      "kind": "primary",
+      "platform": "app_store",
+      "bank": "picpay",
+      "size_bytes": 23721,
+      "sha256": "b42ccb749f5e5ee73144ce7a8304e8311b5914bdef8567c54721159e35b330db",
+      "reviews": 200,
+      "oldest_utc": "2026-09-16T15:41:03+00:00",
+      "newest_utc": "2026-09-23T11:05:54+00:00"
+    },
+    {
+      "path": "data/raw/app_store/mercado_pago/reviews_raw.parquet",
+      "kind": "primary",
+      "platform": "app_store",
+      "bank": "mercado_pago",
+      "size_bytes": 23692,
+      "sha256": "c1c624054457f919060d0ff2dcf52abbf43aa061640f4a21770c7e538225fe1c",
+      "reviews": 109,
+      "oldest_utc": "2025-03-01T15:44:46+00:00",
+      "newest_utc": "2026-09-22T19:50:21+00:00"
+    },
+    {
+      "path": "data/raw/app_store/btg_pactual/reviews_raw.parquet",
+      "kind": "primary",
+      "platform": "app_store",
+      "bank": "btg_pactual",
+      "size_bytes": 38825,
+      "sha256": "d514b2268f4b257a8b0dd91e882b4d7e5af94b105675fe401d9a4bfedc3a5021",
+      "reviews": 250,
+      "oldest_utc": "2026-02-02T17:39:55+00:00",
+      "newest_utc": "2026-09-23T01:50:00+00:00"
+    },
+    {
+      "path": "data/raw/app_store/caixa/reviews_raw.parquet",
+      "kind": "primary",
+      "platform": "app_store",
+      "bank": "caixa",
+      "size_bytes": 14568,
+      "sha256": "b171bda8e579b7a4df0bd314e98165e9a8f4dd99cdbe896bf0b975ab9b6bfd1b",
+      "reviews": 48,
+      "oldest_utc": "2025-05-17T15:51:29+00:00",
+      "newest_utc": "2026-09-09T13:45:36+00:00"
+    },
+    {
+      "path": "data/runs/app_store/experiments/caixa_20260924T141356_461139Z/caixa/reviews_raw.parquet",
+      "kind": "probe",
+      "platform": "app_store",
+      "bank": "caixa",
+      "size_bytes": 8670,
+      "sha256": "72d019fd62762bd905e7676424f9459dad2950a341a45baa041c9658d2ee6e79",
+      "reviews": 6,
+      "oldest_utc": "2025-05-17T15:51:29+00:00",
+      "newest_utc": "2026-08-06T20:37:33+00:00"
+    }
+  ]
+}
