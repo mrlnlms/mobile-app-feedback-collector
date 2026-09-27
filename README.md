@@ -27,6 +27,7 @@ Trazer os registros para arquivos locais muda a forma de trabalhar: é possível
 | Camada | O que faz | Arquivos principais |
 |---|---|---|
 | Coleta e acervo | Busca avaliações, guarda uma base por banco e permite novas rodadas | `scripts/collect/`, `config.yaml`, `data/raw/` |
+| Descrição do acervo | Recalcula contagens, notas e séries temporais sem ler comentários | `analysis/google-play-descritiva.qmd` |
 | Consulta e análise | Pesquisa as bases locais para responder a uma pergunta | `scripts/research/`, resultados locais em `private/research/` e saídas em `data/derived/` |
 
 Os arquivos `reviews_raw.parquet` são o ponto de partida para outras pesquisas. Os scripts de Pix por voz registram **uma investigação feita com esse acervo**, não um limite para os temas que podem ser pesquisados.
@@ -63,5 +64,7 @@ venv/bin/python -m scripts.collect.app_store --bank nubank
 ```
 
 Os guias da [Google Play](docs/playstore-guide.md) e da [App Store](docs/appstore-guide.md) explicam a atualização, os relatórios e os limites de cobertura. Consultas sobre temas específicos partem dos Parquets existentes; o exemplo de Pix por voz e seu método ficam na pesquisa local em `private/research/pix-voz/`.
+
+Para descrever as notas e datas das avaliações da Google Play, use o [relatório Quarto](analysis/google-play-descritiva.qmd). Com as bases locais presentes, instale `venv/bin/python -m pip install -r analysis/requirements.txt` e rode `QUARTO_PYTHON=venv/bin/python quarto render analysis/google-play-descritiva.qmd`. O HTML gerado em `analysis/` fica local e é recalculado a partir dos Parquets a cada renderização.
 
 O projeto começou como resposta a uma demanda urgente e está sendo estruturado a partir do que funcionou. Seu valor central é manter as avaliações acessíveis para perguntas futuras, preservando a possibilidade de voltar às mensagens que sustentam cada achado.

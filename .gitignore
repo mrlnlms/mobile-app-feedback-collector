@@ -18,3 +18,7 @@
 
 # Raw review bases stay local even if placed elsewhere.
 *.parquet
+
+# Rendered local descriptive report.
+/analysis/*.html
+/analysis/*_files/

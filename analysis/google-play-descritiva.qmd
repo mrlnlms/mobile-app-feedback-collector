@@ -1,0 +1,125 @@
+---
+title: "Google Play: descrição das avaliações coletadas"
+subtitle: "Notas e datas dos 11 aplicativos bancários"
+lang: pt-BR
+format:
+  html:
+    toc: true
+    code-fold: true
+execute:
+  echo: false
+  warning: false
+jupyter: python3
+---
+
+Este painel descreve as **avaliações guardadas no acervo local**. Ele lê somente `nota` e `data_avaliacao` dos Parquets da Google Play; não acessa o texto dos comentários. Os resultados são recalculados a cada renderização e não representam necessariamente todas as avaliações publicadas na loja.
+
+O recorte começa em **1º de janeiro de 2025**, para comparar os bancos no mesmo intervalo de calendário. O último mês disponível pode estar incompleto. Diferenças de volume refletem tanto as avaliações observadas quanto a cobertura da coleta; não medem o tamanho da base de clientes nem o engajamento dos aplicativos.
+
+```{python}
+from pathlib import Path
+from datetime import datetime
+import pandas as pd
+import yaml
+from IPython.display import display, Markdown
+
+root = next((p for p in (Path.cwd(), *Path.cwd().parents) if (p / "config.yaml").is_file()), None)
+if root is None:
+    raise FileNotFoundError("Execute o QMD dentro do repositório, que contém config.yaml.")
+
+config = yaml.safe_load((root / "config.yaml").read_text(encoding="utf-8"))
+raw_dir = root / config["collection"]["output_dir"]
+start = pd.Timestamp("2025-01-01")
+frames = []
+sources = []
+
+for slug, bank in config["banks"].items():
+    path = raw_dir / slug / "reviews_raw.parquet"
+    if not path.is_file():
+        raise FileNotFoundError(f"Base local ausente: {path.relative_to(root)}")
+    # A seleção de colunas impede a leitura dos comentários.
+    frame = pd.read_parquet(path, columns=["nota", "data_avaliacao"])
+    frame["data_avaliacao"] = pd.to_datetime(frame["data_avaliacao"], errors="coerce")
+    valid = frame["data_avaliacao"].notna() & frame["nota"].between(1, 5)
+    dates_in_file = frame["data_avaliacao"].dropna()
+    period_in_file = (
+        f"{dates_in_file.min():%d/%m/%Y} a {dates_in_file.max():%d/%m/%Y}"
+        if not dates_in_file.empty else "Sem datas válidas"
+    )
+    sources.append({
+        "Banco": bank["name"],
+        "Arquivo": str(path.relative_to(root)),
+        "Registros no arquivo": len(frame),
+        "Período no arquivo": period_in_file,
+        "Excluídos por nota/data inválida": int((~valid).sum()),
+    })
+    frame = frame.loc[valid & frame["data_avaliacao"].ge(start)].copy()
+    frame["Banco"] = bank["name"]
+    frames.append(frame)
+
+reviews = pd.concat(frames, ignore_index=True)
+if reviews.empty:
+    raise ValueError("Nenhuma avaliação válida encontrada no recorte.")
+sources = pd.DataFrame(sources)
+last_date = reviews["data_avaliacao"].max()
+display(Markdown(
+    f"**Gerado em:** {datetime.now().astimezone():%d/%m/%Y %H:%M %Z}  \n"
+    f"**Recorte observado:** {reviews['data_avaliacao'].min():%d/%m/%Y} a {last_date:%d/%m/%Y}  \n"
+    f"**Avaliações no recorte:** {len(reviews):,} em {len(frames)} bancos".replace(",", ".")
+))
+```
+
+## Cobertura observada por banco
+
+As datas extremas indicam onde há registros no arquivo. Elas não comprovam cobertura contínua. Para investigar uma lacuna, consulte os relatórios de coleta descritos em `docs/playstore-guide.md` e o manifesto do acervo em `data/manifest.json`.
+
+```{python}
+coverage = reviews.groupby("Banco").agg(
+    Avaliações=("nota", "size"),
+    Primeira=("data_avaliacao", "min"),
+    Última=("data_avaliacao", "max"),
+).sort_values("Banco")
+coverage["Primeira"] = coverage["Primeira"].dt.strftime("%d/%m/%Y")
+coverage["Última"] = coverage["Última"].dt.strftime("%d/%m/%Y")
+display(coverage)
+```
+
+## Notas por banco
+
+A média da nota e as proporções abaixo descrevem apenas as avaliações disponíveis. **Média/mês** é a contagem mensal média entre janeiro de 2025 e o mês anterior ao último observado; o último mês fica fora por poder estar incompleto. Meses sem registros entram como zero, sem presumir que sua cobertura foi confirmada. Esses números não medem diretamente a satisfação dos clientes.
+
+```{python}
+reviews["Mês"] = reviews["data_avaliacao"].dt.to_period("M").astype(str)
+monthly = reviews.groupby(["Mês", "Banco"]).size().unstack("Banco")
+complete_months = pd.period_range(start.to_period("M"), last_date.to_period("M") - 1, freq="M")
+summary = reviews.groupby("Banco")["nota"].agg(Avaliações="size", Média="mean")
+summary.insert(
+    1,
+    "Média/mês",
+    (monthly.reindex(complete_months.astype(str), fill_value=0).sum() / len(complete_months)).round(0).astype("Int64")
+    if len(complete_months) else pd.Series(pd.NA, index=summary.index, dtype="Int64"),
+)
+distribution = pd.crosstab(reviews["Banco"], reviews["nota"])
+for score in range(1, 6):
+    summary[f"{score} estrela(s) (%)"] = (
+        distribution.get(score, 0) / summary["Avaliações"] * 100
+    ).round(1)
+summary["Média"] = summary["Média"].round(2)
+display(summary.sort_values("Média", ascending=False))
+```
+
+## Avaliações por mês
+
+Cada célula é uma contagem observada. Uma célula vazia significa ausência de registros naquele mês no arquivo; pode corresponder a cobertura incompleta. O mês final não é comparável a um mês completo.
+
+```{python}
+display(monthly.astype("Int64"))
+```
+
+## Arquivos usados
+
+Este relatório executa sobre os Parquets locais no momento da renderização. O período desta tabela cobre o arquivo inteiro, inclusive datas anteriores a janeiro de 2025, quando houver. O manifesto versionado em `data/manifest.json` oferece hashes para identificar uma cópia do acervo; seus valores devem ser conferidos após novas coletas.
+
+```{python}
+display(sources.set_index("Banco"))
+```
