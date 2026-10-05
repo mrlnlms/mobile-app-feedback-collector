@@ -27,7 +27,7 @@ Trazer os registros para arquivos locais muda a forma de trabalhar: é possível
 | Camada | O que faz | Arquivos principais |
 |---|---|---|
 | Coleta e acervo | Busca avaliações, guarda uma base por banco e permite novas rodadas | `scripts/collect/`, `config.yaml`, `data/raw/` |
-| Descrição do acervo | Recalcula contagens, notas e séries temporais sem ler comentários | `analysis/google-play-descritiva.qmd` |
+| Descrição do acervo | Recalcula contagens, notas e séries temporais sem ler comentários | `analysis/google-play-descritiva.qmd`, `analysis/app-store-descritiva.qmd` |
 | Consulta e análise | Pesquisa as bases locais para responder a uma pergunta | `scripts/research/`, resultados locais em `private/research/` e saídas em `data/derived/` |
 
 Os arquivos `reviews_raw.parquet` são o ponto de partida para outras pesquisas. Os scripts de Pix por voz registram **uma investigação feita com esse acervo**, não um limite para os temas que podem ser pesquisados.
@@ -82,14 +82,15 @@ venv/bin/python -m scripts.collect.app_store --all
 
 Antes de uma atualização Google Play, `venv/bin/python -m scripts.collect.google_play --all --dry-run` mostra as fronteiras de coleta sem acessar a loja. Os dois coletores usam `.runtime/<plataforma>/` para checkpoints e preparação local. Após publicação confirmada, removem o checkpoint e o Parquet preparado; bases, estados, snapshots e relatórios ficam no Drive. Em caso de falha, repita o mesmo comando para retomar. O manifesto é atualizado automaticamente ao final de comandos com publicação bem-sucedida. As coletas não renderizam o Quarto automaticamente.
 
-Para descrever as notas e datas da Google Play, instale `venv/bin/python -m pip install -r analysis/requirements.txt` e, com o Quarto instalado, execute:
+Para descrever as notas e datas de cada loja, instale `venv/bin/python -m pip install -r analysis/requirements.txt` e, com o Quarto instalado, execute:
 
 ```bash
 venv/bin/python -m scripts.reports.render_google_play
+venv/bin/python -m scripts.reports.render_app_store
 ```
 
-O comando renderiza uma cópia do [QMD](analysis/google-play-descritiva.qmd) em uma pasta temporária local, publica uma versão completa e conferida em `private/reports/google-play-descritiva/<data-hora>/` e atualiza o único symlink `analysis/output/`. Abra `analysis/output/google-play-descritiva.html` para consultar o relatório. A fonte QMD permanece versionada. Use esse comando para publicar novas renderizações com seus recursos no Drive.
+Cada comando renderiza uma cópia local do seu QMD, publica uma versão completa e conferida no Drive e atualiza um symlink para a versão atual. A Google Play usa [google-play-descritiva.qmd](analysis/google-play-descritiva.qmd), `private/reports/google-play-descritiva/<data-hora>/` e `analysis/output/google-play-descritiva.html`. A App Store usa [app-store-descritiva.qmd](analysis/app-store-descritiva.qmd), `private/reports/app-store-descritiva/<data-hora>/` e `analysis/app-store-output/app-store-descritiva.html`. Cada relatório tem seu próprio atalho e seus recursos; ambos os QMDs permanecem versionados.
 
-A renderização de 27/09/2026 e a primeira versão de 05/10/2026 foram preservadas nos caminhos anteriores. Novas versões ficam em pastas com data e hora; uma falha de renderização ou cópia mantém o link para a versão anterior. A aba “Atualização do acervo” mostra a comparação preservada de 05/10 apenas enquanto seus hashes corresponderem às bases atuais; a geração dessa comparação específica não é automática nas próximas coletas. Contagens, notas e séries do relatório são recalculadas com as bases atuais a cada renderização.
+As renderizações anteriores da Google Play foram preservadas nos caminhos anteriores. Novas versões ficam em pastas com data e hora; uma falha de renderização ou cópia mantém o link para a versão anterior. A aba “Atualização do acervo” de cada relatório mostra sua comparação preservada de 05/10 apenas enquanto seus hashes corresponderem às bases atuais; a geração dessas comparações específicas não é automática nas próximas coletas. Contagens, notas e séries do relatório são recalculadas com as bases atuais a cada renderização.
 
 O projeto começou como resposta a uma demanda urgente e está sendo estruturado a partir do que funcionou. Seu valor central é manter as avaliações acessíveis para perguntas futuras, preservando a possibilidade de voltar às mensagens que sustentam cada achado.

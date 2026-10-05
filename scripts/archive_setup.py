@@ -138,6 +138,15 @@ def setup(root, private_dir=None):
             path.unlink()
         if legacy_output.is_symlink():
             legacy_output.unlink()
+    app_link = analysis / 'app-store-output'
+    if app_link.exists() and not app_link.is_symlink():
+        raise RuntimeError(f'Caminho de saída existente não é symlink: {app_link}')
+    if not app_link.exists():
+        versions = sorted((private / 'reports/app-store-descritiva').glob('*'))
+        complete = [v for v in versions if (v / 'app-store-descritiva.html').is_file()
+                    and (v / 'app-store-descritiva_files').is_dir()]
+        if complete:
+            replace_link(app_link, os.path.relpath(complete[-1], analysis))
     print('Acervo configurado: data/{raw,derived,runs} aponta para private/data/.')
     print('Próximas coletas preparam os dados em .runtime/ e publicam no acervo externo.')
 

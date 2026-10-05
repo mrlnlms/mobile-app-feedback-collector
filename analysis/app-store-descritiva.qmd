@@ -1,0 +1,520 @@
+---
+title: "App Store: descrição das avaliações coletadas"
+subtitle: "Notas e datas dos 11 aplicativos bancários"
+lang: pt-BR
+format:
+  html:
+    toc: true
+    code-fold: true
+execute:
+  echo: false
+  warning: false
+jupyter: python3
+---
+
+Este painel descreve as **avaliações guardadas no acervo local** da App Store brasileira. Ele lê somente `nota` e `data_avaliacao` dos Parquets; não acessa o texto dos comentários. `data_avaliacao` corresponde ao campo `updated` do RSS, convertido para UTC, e pode refletir uma edição da avaliação. Os resultados são recalculados a cada renderização e descrevem apenas os registros acessíveis e preservados, não todas as avaliações ou notas da loja.
+
+O recorte comparativo começa em **1º de janeiro de 2025**; avaliações anteriores do Nubank ficam fora dele. Os feeds `mostrecent` e `mosthelpful` têm páginas limitadas e cobertura histórica irregular. Uma ausência ou um volume baixo em um mês pode refletir essa limitação. O último mês observado também pode estar incompleto. Todas as datas do painel são apresentadas em UTC.
+
+```{python}
+from pathlib import Path
+from datetime import datetime
+import hashlib
+import json
+import pandas as pd
+import yaml
+from IPython.display import display, Markdown
+
+root = next((p for p in (Path.cwd(), *Path.cwd().parents) if (p / "config.yaml").is_file()), None)
+if root is None:
+    raise FileNotFoundError("Execute o QMD dentro do repositório, que contém config.yaml.")
+
+config = yaml.safe_load((root / "config.yaml").read_text(encoding="utf-8"))
+raw_dir = root / config["app_store"]["output_dir"]
+start = pd.Timestamp("2025-01-01")
+frames = []
+sources = []
+selection = []
+source_paths = {}
+
+for slug, bank in config["banks"].items():
+    path = raw_dir / slug / "reviews_raw.parquet"
+    if not path.is_file():
+        raise FileNotFoundError(f"Base local ausente: {path.relative_to(root)}")
+    source_paths[slug] = path
+    # A seleção de colunas impede a leitura dos comentários.
+    frame = pd.read_parquet(path, columns=["nota", "data_avaliacao"])
+    frame["data_avaliacao"] = pd.to_datetime(frame["data_avaliacao"], errors="coerce", utc=True).dt.tz_convert(None)
+    invalid_date = frame["data_avaliacao"].isna()
+    invalid_score = ~invalid_date & ~frame["nota"].between(1, 5)
+    valid = ~(invalid_date | invalid_score)
+    before_start = valid & frame["data_avaliacao"].lt(start)
+    in_scope = valid & frame["data_avaliacao"].ge(start)
+    dates_in_file = frame["data_avaliacao"].dropna()
+    dates_in_scope = frame.loc[in_scope, "data_avaliacao"]
+    sources.append({
+        "Banco": bank["name"],
+        "Registros brutos": len(frame),
+        "Primeira data no arquivo": f"{dates_in_file.min():%d/%m/%Y}" if not dates_in_file.empty else "—",
+        "Última data no arquivo": f"{dates_in_file.max():%d/%m/%Y}" if not dates_in_file.empty else "—",
+        "Arquivo": str(path.relative_to(raw_dir)),
+    })
+    selection.append({
+        "Banco": bank["name"],
+        "Avaliações analisadas": int(in_scope.sum()),
+        "Primeira no recorte": f"{dates_in_scope.min():%d/%m/%Y}" if not dates_in_scope.empty else "—",
+        "Última no recorte": f"{dates_in_scope.max():%d/%m/%Y}" if not dates_in_scope.empty else "—",
+        "Antes de 2025": int(before_start.sum()),
+        "Nota inválida": int(invalid_score.sum()),
+        "Data inválida": int(invalid_date.sum()),
+    })
+    frame = frame.loc[in_scope].copy()
+    frame["Banco"] = bank["name"]
+    frames.append(frame)
+
+reviews = pd.concat(frames, ignore_index=True)
+if reviews.empty:
+    raise ValueError("Nenhuma avaliação válida encontrada no recorte.")
+sources = pd.DataFrame(sources)
+selection = pd.DataFrame(selection)
+last_date = reviews["data_avaliacao"].max()
+display(Markdown(
+    f"**Gerado em:** {datetime.now().astimezone():%d/%m/%Y %H:%M %Z}"
+))
+```
+
+## Base observada
+
+::: {.panel-tabset}
+
+### Recorte analisado
+
+```{python}
+display(Markdown(
+    f"**Recorte observado:** {reviews['data_avaliacao'].min():%d/%m/%Y} a {last_date:%d/%m/%Y}  \n"
+    f"**Avaliações analisadas:** {len(reviews):,} em {len(frames)} bancos".replace(",", ".")
+))
+```
+
+**Antes de 2025** conta os registros com data válida que ficaram fora do período. As datas da tabela mostram a primeira e a última avaliação de cada banco dentro do recorte.
+
+```{python}
+display(selection.set_index("Banco")[
+    ["Avaliações analisadas", "Primeira no recorte", "Última no recorte", "Antes de 2025"]
+])
+invalid_counts = selection[["Nota inválida", "Data inválida"]].sum()
+if invalid_counts.sum():
+    display(Markdown(
+        f"Também ficaram fora da análise **{int(invalid_counts['Nota inválida'])}** registros "
+        f"com nota inválida e **{int(invalid_counts['Data inválida'])}** com data inválida."
+    ))
+```
+
+```{python}
+def br_int(value):
+    return f"{int(value):,}".replace(",", ".")
+
+def br_num(value, decimals=1):
+    return f"{value:.{decimals}f}".replace(".", ",")
+```
+
+### Atualização do acervo
+
+```{python}
+comparison_path = root / "data/derived/app_store/current/collection_comparison.json"
+if comparison_path.is_file():
+    comparison = json.loads(comparison_path.read_text(encoding="utf-8"))
+    before = {row["bank"]: row for row in comparison["before"]["banks"]}
+    after = {row["bank"]: row for row in comparison["after"]["banks"]}
+    matches_current = set(after) == set(source_paths) and all(
+        hashlib.sha256(source_paths[slug].read_bytes()).hexdigest() == row["sha256"]
+        for slug, row in after.items()
+    )
+    if matches_current:
+        comparison_rows = []
+        for slug in config["banks"]:
+            old, new = before[slug], after[slug]
+            comparison_rows.append({
+                "Banco": new["name"],
+                "Última antes (UTC)": pd.Timestamp(old["newest_utc"]).strftime("%d/%m/%Y"),
+                "Última agora (UTC)": pd.Timestamp(new["newest_utc"]).strftime("%d/%m/%Y"),
+                "Avaliações antes": old["reviews"],
+                "Avaliações agora": new["reviews"],
+                "IDs novos": new["added_ids"],
+                "IDs removidos": new["removed_ids"],
+            })
+        display(Markdown(
+            f"Comparação preservada da coleta RSS de **{pd.Timestamp(comparison['after']['recorded_at']):%d/%m/%Y}**. "
+            "Os IDs novos podem incluir avaliações antigas que o RSS não havia retornado; "
+            "o crescimento do arquivo não comprova cobertura integral."
+        ))
+        display(pd.DataFrame(comparison_rows).set_index("Banco"))
+    else:
+        display(Markdown("A comparação preservada pertence a outra versão do acervo. As tabelas e os gráficos deste relatório usam as bases atuais."))
+else:
+    display(Markdown("Ainda não há uma comparação preservada entre rodadas de atualização."))
+```
+
+### Arquivos de origem
+
+Esta tabela descreve os Parquets locais antes dos filtros da análise. As datas mostram o primeiro e o último registro com data legível em cada arquivo; não comprovam cobertura contínua. Para investigar lacunas ou feeds vazios, consulte os relatórios de coleta descritos em `docs/appstore-guide.md`. O manifesto em `data/manifest.json` oferece hashes para identificar uma cópia do acervo; confira seus valores após novas coletas.
+
+<style>
+#arquivos-origem-tabela table.dataframe { table-layout: fixed; width: 100%; }
+#arquivos-origem-tabela table.dataframe th:nth-child(1) { width: 20%; }
+#arquivos-origem-tabela table.dataframe th:nth-child(2) { width: 14%; }
+#arquivos-origem-tabela table.dataframe th:nth-child(3),
+#arquivos-origem-tabela table.dataframe th:nth-child(4) { width: 16%; }
+#arquivos-origem-tabela table.dataframe th:nth-child(5) { width: 34%; }
+#arquivos-origem-tabela table.dataframe td:last-child { overflow-wrap: anywhere; }
+</style>
+
+::: {#arquivos-origem-tabela}
+
+```{python}
+display(Markdown(
+    f"**Pasta-base:** `{raw_dir.relative_to(root)}/`. "
+    "A coluna **Arquivo** mostra o caminho dentro dessa pasta."
+))
+display(sources.set_index("Banco").rename(columns={
+    "Registros brutos": "Registros",
+    "Primeira data no arquivo": "Primeira data",
+    "Última data no arquivo": "Última data",
+}))
+```
+
+:::
+
+:::
+
+## Notas por banco
+
+A média da nota e as proporções abaixo descrevem apenas as avaliações disponíveis. **Média/mês** divide os registros observados pelos meses de janeiro de 2025 até o mês anterior ao último observado; o último fica fora por poder estar incompleto. Meses sem registros entram como zero no cálculo. Como o RSS tem alcance desigual por banco e período, essa média resume apenas o arquivo, não o ritmo real de avaliações na loja. Esses números não medem diretamente a satisfação dos clientes.
+
+```{python}
+reviews["Mês"] = reviews["data_avaliacao"].dt.to_period("M").astype(str)
+monthly = reviews.groupby(["Mês", "Banco"]).size().unstack("Banco")
+complete_months = pd.period_range(start.to_period("M"), last_date.to_period("M") - 1, freq="M")
+summary = reviews.groupby("Banco")["nota"].agg(Avaliações="size", Média="mean")
+summary.insert(
+    1,
+    "Média/mês",
+    (monthly.reindex(complete_months.astype(str), fill_value=0).sum() / len(complete_months)).round(0).astype("Int64")
+    if len(complete_months) else pd.Series(pd.NA, index=summary.index, dtype="Int64"),
+)
+distribution = pd.crosstab(reviews["Banco"], reviews["nota"])
+for score in range(1, 6):
+    summary[f"{score} estrela(s) (%)"] = (
+        distribution.get(score, 0) / summary["Avaliações"] * 100
+    ).round(1)
+summary["Média"] = summary["Média"].round(2)
+display(summary.sort_values("Média", ascending=False))
+```
+
+### Ranking, faixas de nota e concentração nos extremos
+
+```{python}
+mean_exact = reviews.groupby("Banco")["nota"].mean()
+ranked = mean_exact.sort_values(ascending=False)
+top_four = ", ".join(
+    f"{bank} ({br_num(value, 2)})" for bank, value in ranked.head(4).items()
+)
+top_three_profile = "; ".join(
+    f"{bank}: {br_num(summary.at[bank, '5 estrela(s) (%)'])}% de 5 estrelas "
+    f"e {br_num(summary.at[bank, '1 estrela(s) (%)'])}% de 1 estrela"
+    for bank in ranked.head(3).index
+)
+bands = [
+    ("4,0 ou mais", mean_exact.ge(4.0)),
+    ("3,5 a menos de 4,0", mean_exact.ge(3.5) & mean_exact.lt(4.0)),
+    ("Abaixo de 3,5", mean_exact.lt(3.5)),
+]
+band_rows = [
+    f"| {label} | {', '.join(ranked.index[mask.reindex(ranked.index)])} |"
+    for label, mask in bands
+]
+one_share = reviews["nota"].eq(1).mean() * 100
+five_share = reviews["nota"].eq(5).mean() * 100
+middle_share = 100 - one_share - five_share
+middle_by_bank = (
+    distribution.reindex(columns=[2, 3, 4], fill_value=0).sum(axis=1)
+    / summary["Avaliações"] * 100
+)
+one_rank = summary["1 estrela(s) (%)"].sort_values(ascending=False)
+five_rank = summary["5 estrela(s) (%)"].sort_values(ascending=False)
+display(Markdown(
+    f"**Maiores notas médias:** {top_four}. A ordem atual substitui os rankings fixos "
+    "dos documentos de referência. "
+    f"A maior proporção de 5 estrelas é a de **{five_rank.index[0]}** "
+    f"({br_num(five_rank.iloc[0])}%). As maiores proporções de 1 estrela são "
+    f"**{one_rank.index[0]}** ({br_num(one_rank.iloc[0])}%) e "
+    f"**{one_rank.index[1]}** ({br_num(one_rank.iloc[1])}%). "
+    f"O perfil dos três primeiros é: {top_three_profile}.\n\n"
+    f"No conjunto, **{br_num(one_share)}%** das avaliações têm 1 estrela e "
+    f"**{br_num(five_share)}%** têm 5 estrelas. As notas 2, 3 e 4 somam "
+    f"**{br_num(middle_share)}%**; por banco, essa parcela vai de "
+    f"**{br_num(middle_by_bank.min())}%** a **{br_num(middle_by_bank.max())}%**."
+))
+display(Markdown(
+    "| Faixa de nota média | Bancos |\n|---|---|\n" + "\n".join(band_rows)
+))
+```
+
+As três faixas organizam as médias observadas, sem classificá-las como níveis de satisfação. A concentração nas notas extremas é observável; ela não torna as notas intermediárias irrelevantes nem revela por que alguém avaliou o aplicativo.
+
+Os gráficos usam os mesmos indicadores descritivos do relatório Google Play. Cada valor é recalculado a partir dos Parquets da App Store, com o recorte e a definição de **Média/mês** da tabela acima.
+
+```{python}
+import matplotlib.pyplot as plt
+
+def chart_by_bank(column, axis_title, color, value_label, axis_max):
+    values = summary[column].dropna().astype(float).sort_values()
+    figure, axis = plt.subplots(figsize=(9, 5.2))
+    bars = axis.barh(values.index, values.to_numpy(), color=color)
+    axis.bar_label(bars, labels=[value_label(value) for value in values], padding=4)
+    axis.set(xlim=(0, axis_max), xlabel=axis_title)
+    axis.grid(axis="x", color="#e5e7eb", linewidth=0.8)
+    axis.set_axisbelow(True)
+    for spine in axis.spines.values():
+        spine.set_visible(False)
+    figure.tight_layout()
+    plt.show()
+```
+
+### Visão integrada por banco
+
+Cada linha reúne a nota média, a distribuição das avaliações entre 1 estrela, 2 a 4 estrelas e 5 estrelas, e o volume médio mensal coletado. Os bancos seguem a ordem da nota média; cada indicador mantém sua própria escala.
+
+```{python}
+#| column: page
+#| fig-alt: "Comparação dos onze bancos por nota média, distribuição das estrelas e volume médio mensal, alinhados em linhas."
+import numpy as np
+from matplotlib.patches import Patch
+from matplotlib.ticker import FuncFormatter, MaxNLocator
+
+banks_in_order = mean_exact.sort_values(ascending=False).index
+y = np.arange(len(banks_in_order))
+mean_values = mean_exact.reindex(banks_in_order).to_numpy()
+counts = distribution.reindex(index=banks_in_order, columns=range(1, 6), fill_value=0)
+one_values = (counts[1] / counts.sum(axis=1) * 100).to_numpy()
+five_values = (counts[5] / counts.sum(axis=1) * 100).to_numpy()
+middle_values = 100 - one_values - five_values
+volume_values = summary["Média/mês"].reindex(banks_in_order).astype(float).to_numpy()
+
+figure, (mean_axis, stars_axis, volume_axis) = plt.subplots(
+    1, 3, sharey=True, figsize=(13.2, 6.8),
+    gridspec_kw={"width_ratios": [1.1, 2.1, 1.4]},
+)
+figure.subplots_adjust(left=0.18, right=0.98, top=0.89, bottom=0.18, wspace=0.12)
+
+mean_axis.hlines(y, 1, mean_values, color="#bbf7d0", linewidth=5)
+mean_axis.scatter(mean_values, y, color="#16a34a", s=52, zorder=3)
+for row, value in zip(y, mean_values):
+    mean_axis.text(value + 0.16, row, f"{value:.2f}".replace(".", ","), va="center", fontsize=9)
+mean_axis.set(xlim=(1, 5.7), title="Nota média", xlabel="Escala de 1 a 5")
+mean_axis.set_xticks([1, 2, 3, 4, 5])
+mean_axis.set_yticks(y, labels=banks_in_order, fontsize=10)
+mean_axis.invert_yaxis()
+
+stars_axis.barh(y, one_values, color="#ea580c", height=0.62)
+stars_axis.barh(y, middle_values, left=one_values, color="#cbd5e1", height=0.62)
+stars_axis.barh(y, five_values, left=one_values + middle_values, color="#2563eb", height=0.62)
+for row, one, five in zip(y, one_values, five_values):
+    stars_axis.text(one / 2, row, f"{one:.1f}%".replace(".", ","), color="white", ha="center", va="center", fontsize=8)
+    stars_axis.text(100 - five / 2, row, f"{five:.1f}%".replace(".", ","), color="white", ha="center", va="center", fontsize=8)
+stars_axis.set(xlim=(0, 100), title="Distribuição das notas", xlabel="Proporção das avaliações (%)")
+stars_axis.set_xticks([0, 25, 50, 75, 100])
+
+if np.isfinite(volume_values).any():
+    volume_max = np.nanmax(volume_values)
+    volume_axis.barh(y, np.nan_to_num(volume_values), color="#7c3aed", height=0.62)
+    for row, value in zip(y, volume_values):
+        if np.isfinite(value):
+            volume_axis.text(value + volume_max * 0.02, row, f"{value:,.0f}".replace(",", "."), va="center", fontsize=9)
+    volume_axis.set_xlim(0, volume_max * 1.27)
+    volume_axis.xaxis.set_major_locator(MaxNLocator(4))
+    volume_axis.xaxis.set_major_formatter(FuncFormatter(
+        lambda value, _: br_int(round(value))
+    ))
+else:
+    volume_axis.text(0.5, 0.5, "Sem mês completo", transform=volume_axis.transAxes, ha="center")
+    volume_axis.set_xticks([])
+volume_axis.set(title="Volume médio mensal", xlabel="Avaliações por mês completo")
+
+for axis in (mean_axis, stars_axis, volume_axis):
+    axis.tick_params(axis="y", length=0)
+    axis.grid(axis="x", color="#e5e7eb", linewidth=0.8)
+    axis.set_axisbelow(True)
+    for spine in axis.spines.values():
+        spine.set_visible(False)
+stars_axis.tick_params(axis="y", labelleft=False)
+volume_axis.tick_params(axis="y", labelleft=False)
+figure.legend(
+    handles=[Patch(color="#ea580c", label="1 estrela"),
+             Patch(color="#cbd5e1", label="2 a 4 estrelas"),
+             Patch(color="#2563eb", label="5 estrelas")],
+    loc="lower center", bbox_to_anchor=(0.55, 0.02), ncol=3, frameon=False,
+)
+plt.show()
+```
+
+### Nota média
+
+```{python}
+chart_by_bank(
+    "Média", "Nota média (1 a 5)", "#16a34a",
+    lambda value: f"{value:.2f}", 5,
+)
+```
+
+### Proporção de notas 5 estrelas
+
+```{python}
+chart_by_bank(
+    "5 estrela(s) (%)", "Avaliações com 5 estrelas (%)", "#2563eb",
+    lambda value: f"{value:.1f}%", 100,
+)
+```
+
+### Proporção de notas 1 estrela
+
+```{python}
+chart_by_bank(
+    "1 estrela(s) (%)", "Avaliações com 1 estrela (%)", "#ea580c",
+    lambda value: f"{value:.1f}%", max(40, summary["1 estrela(s) (%)"].max() * 1.15),
+)
+```
+
+## Volume das avaliações
+
+### Volume médio mensal coletado
+
+```{python}
+monthly_averages = summary["Média/mês"].dropna()
+if monthly_averages.empty:
+    display(Markdown("Ainda não há um mês completo no recorte."))
+else:
+    chart_by_bank(
+        "Média/mês", "Avaliações coletadas por mês completo", "#7c3aed",
+        lambda value: f"{value:,.0f}".replace(",", "."),
+        monthly_averages.max() * 1.15,
+    )
+```
+
+### Avaliações por mês
+
+Cada célula é uma contagem observada. Uma célula vazia significa ausência de registros naquele mês no arquivo; pode corresponder a cobertura incompleta. O mês final não é comparável a um mês completo.
+
+```{python}
+display(monthly.astype("Int64"))
+```
+
+## Limites da amostra RSS
+
+Os arquivos acumulam avaliações que apareceram no RSS em diferentes rodadas. O feed `mostrecent` não alcançou a data inicial configurada em nenhum dos dez bancos em que respondeu na coleta de 05/10/2026; no Itaú, veio vazio nessa rodada. O sort `mosthelpful` também não oferece uma linha do tempo contínua. Consulte `docs/appstore-guide.md` e os relatórios de coleta antes de interpretar lacunas entre meses ou comparar os volumes entre bancos.
+
+A App Store também recebe notas sem texto, que não entram neste acervo de reviews do RSS. Uma média das avaliações aqui coletadas não deve ser apresentada como a nota pública do aplicativo. Para investigar motivos de avaliação ou um tema específico, é preciso analisar os comentários com outro método.
+
+## Leitura final: do volume às notas
+
+Os indicadores acima podem ser lidos em sequência: primeiro, quantas avaliações há no recorte; depois, como esse volume se distribui nos meses; por fim, quais notas essas avaliações receberam. O gráfico ao final reúne o tamanho do recorte e as proporções das notas extremas.
+
+### 1. Tamanho do recorte
+
+```{python}
+volume_order = summary["Avaliações"].sort_values(ascending=False)
+display(Markdown(
+    f"São **{br_int(len(reviews))} avaliações observadas** em **{len(volume_order)} bancos**. "
+    f"O maior conjunto é o do **{volume_order.index[0]}** "
+    f"({br_int(volume_order.iloc[0])}); o menor é o do **{volume_order.index[-1]}** "
+    f"({br_int(volume_order.iloc[-1])}). A tabela em **Base observada** mostra os totais "
+    "de todos os bancos e as datas disponíveis em cada arquivo."
+))
+```
+
+### 2. Ritmo mensal
+
+```{python}
+monthly_order = summary["Média/mês"].dropna().sort_values(ascending=False)
+if monthly_order.empty:
+    display(Markdown("Ainda não há mês completo para comparar o ritmo mensal."))
+else:
+    display(Markdown(
+        f"Em **{len(complete_months)} meses completos** do recorte, a média mensal "
+        f"vai de **{br_int(monthly_order.iloc[-1])}** avaliações no "
+        f"**{monthly_order.index[-1]}** a **{br_int(monthly_order.iloc[0])}** no "
+        f"**{monthly_order.index[0]}**. O gráfico de volume médio e a tabela "
+        "**Avaliações por mês** mostram, respectivamente, a média dos registros disponíveis e sua variação "
+        "ao longo do tempo. O mês final observado fica fora da média por poder estar incompleto; meses anteriores também podem estar incompletos pela limitação do RSS."
+    ))
+```
+
+### 3. Perfil das notas
+
+```{python}
+display(Markdown(
+    f"A nota média vai de **{br_num(ranked.iloc[-1], 2)}** "
+    f"({ranked.index[-1]}) a **{br_num(ranked.iloc[0], 2)}** "
+    f"({ranked.index[0]}). No conjunto, **{br_num(five_share)}%** das avaliações "
+    f"têm 5 estrelas e **{br_num(one_share)}%** têm 1 estrela. Os gráficos "
+    "de notas acima mostram como essas proporções mudam entre os bancos."
+))
+```
+
+### 4. Volume e notas no mesmo gráfico
+
+As barras cinza mostram o **total de avaliações no recorte**, inclusive o último mês observado; os valores aparecem sobre elas. As linhas verde e vermelha mostram as proporções de **5** e **1 estrela**. A nota média aparece abaixo do nome do banco e ao passar o cursor sobre a barra. Os bancos estão ordenados pela nota média.
+
+```{python}
+#| column: page
+import plotly.graph_objects as go
+
+banks_overlay = ranked.index.tolist()
+score_overlay = ranked.to_numpy()
+total_overlay = summary["Avaliações"].reindex(banks_overlay).to_numpy()
+one_overlay = summary["1 estrela(s) (%)"].reindex(banks_overlay).to_numpy()
+five_overlay = summary["5 estrela(s) (%)"].reindex(banks_overlay).to_numpy()
+
+short_names = {
+    "Banco do Brasil": "Banco do<br>Brasil",
+    "Mercado Pago": "Mercado<br>Pago",
+    "Caixa Econômica Federal": "Caixa Econômica<br>Federal",
+}
+bank_labels = [
+    f"{short_names.get(bank, bank)}<br>{br_num(score, 2)}★"
+    for bank, score in zip(banks_overlay, score_overlay)
+]
+figure_overlay = go.Figure()
+figure_overlay.add_trace(go.Bar(
+    name="Total no recorte", x=banks_overlay, y=total_overlay, yaxis="y2",
+    marker_color="#94a3b8", opacity=0.7, width=0.6, legendrank=3,
+    text=[br_int(value) for value in total_overlay],
+    textposition="outside", textfont=dict(color="#475569", size=10),
+    customdata=[[br_int(total), br_num(score, 2)] for total, score in zip(total_overlay, score_overlay)],
+    hovertemplate="Total no recorte: %{customdata[0]}<br>Nota média: %{customdata[1]}<extra></extra>",
+))
+for name, values, color, rank in (
+    ("5 estrelas", five_overlay, "#16a34a", 1),
+    ("1 estrela", one_overlay, "#dc2626", 2),
+):
+    figure_overlay.add_trace(go.Scatter(
+        name=name, x=banks_overlay, y=values, mode="lines+markers",
+        line=dict(color=color, width=3), marker=dict(size=8), legendrank=rank,
+        customdata=[br_num(value) for value in values],
+        hovertemplate=f"{name}: %{{customdata}}%<extra></extra>",
+    ))
+
+figure_overlay.update_layout(
+    template="plotly_white", height=670, autosize=True, hovermode="x unified",
+    margin=dict(l=70, r=40, t=70, b=105),
+    legend=dict(orientation="h", x=0, y=1.13, traceorder="normal"),
+    xaxis=dict(domain=[0.02, 0.98], categoryorder="array", categoryarray=banks_overlay,
+               tickmode="array", tickvals=banks_overlay, ticktext=bank_labels,
+               tickangle=0, tickfont=dict(size=10), showgrid=False),
+    yaxis=dict(title="Avaliações com 1 ou 5 estrelas (%)", range=[0, 100],
+               ticksuffix="%", showgrid=True, gridcolor="#e5e7eb", zeroline=False),
+    yaxis2=dict(range=[0, max(total_overlay) * 1.2], anchor="x", overlaying="y",
+                visible=False),
+)
+figure_overlay.show(renderer="notebook")
+```

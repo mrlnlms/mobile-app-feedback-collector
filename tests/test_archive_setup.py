@@ -72,6 +72,19 @@ class SetupTests(unittest.TestCase):
         self.assertEqual((analysis / 'output').resolve(), version.resolve())
         self.assertEqual([p.name for p in analysis.iterdir()], ['output'])
 
+    def test_new_clone_restores_app_store_report_link(self):
+        analysis = self.root / 'analysis'
+        analysis.mkdir()
+        version = self.drive / 'reports/app-store-descritiva/2026-10-05T120000'
+        version.mkdir(parents=True)
+        (version / 'app-store-descritiva.html').write_text('app report')
+        (version / 'app-store-descritiva_files').mkdir()
+        setup(self.root, self.drive)
+        self.assertEqual((analysis / 'app-store-output').resolve(), version.resolve())
+        self.assertEqual((analysis / 'app-store-output/app-store-descritiva.html').read_text(), 'app report')
+        setup(self.root, self.drive)
+        self.assertEqual((analysis / 'app-store-output').resolve(), version.resolve())
+
     def test_divergent_legacy_report_link_is_preserved(self):
         analysis, version = self.report_version()
         legacy = analysis / 'google-play-descritiva-output'

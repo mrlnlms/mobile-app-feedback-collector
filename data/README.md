@@ -46,7 +46,7 @@ Se já houver arquivos locais, confere sua cópia por SHA-256 antes de substitui
 
 ## Relatórios Quarto
 
-O QMD permanece em Git. `venv/bin/python -m scripts.reports.render_google_play` renderiza localmente, copia e confere uma versão completa no Drive e atualiza o único symlink `analysis/output/`. O HTML e seus recursos ficam juntos dentro dessa versão; abra `analysis/output/google-play-descritiva.html`. Na pasta `analysis/`, apenas o QMD, as dependências e a configuração permanecem como arquivos locais. O comando `scripts.archive_setup` converte os três atalhos antigos para `output/`, conferindo os destinos antes de removê-los. A renderização anterior permanece disponível se o comando falhar; cada publicação cria uma pasta com data e hora em `private/reports/google-play-descritiva/`.
+Os dois QMDs permanecem em Git. `venv/bin/python -m scripts.reports.render_google_play` e `venv/bin/python -m scripts.reports.render_app_store` renderizam localmente, copiam e conferem versões completas no Drive. A Google Play usa `analysis/output/google-play-descritiva.html` e `private/reports/google-play-descritiva/`; a App Store usa `analysis/app-store-output/app-store-descritiva.html` e `private/reports/app-store-descritiva/`. Cada relatório tem um único symlink, apontando para sua própria pasta de versão com HTML e recursos. `scripts.archive_setup` restaura os links de versões existentes em outro clone e migra os antigos atalhos da Google Play após conferir seus destinos. Em falhas de renderização ou cópia, o link continua na versão anterior. Os QMDs leem apenas nota e data; o da App Store usa a data `updated` do RSS em UTC e explica sua cobertura irregular.
 
 ## Migração de 05/10/2026
 

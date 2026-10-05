@@ -24,17 +24,24 @@ def replace_link(link, target):
     os.replace(temporary, link)
 
 
-def render(root):
+REPORTS = {
+    'google_play': ('google-play-descritiva', 'output', 'google_play'),
+    'app_store': ('app-store-descritiva', 'app-store-output', 'app_store'),
+}
+
+
+def render(root, platform='google_play'):
     root = Path(root).resolve()
-    source = root / "analysis/google-play-descritiva.qmd"
-    destination = root / "private/reports/google-play-descritiva"
+    stem, link_name, data_platform = REPORTS[platform]
+    source = root / 'analysis' / f'{stem}.qmd'
+    destination = root / 'private/reports' / stem
     assert_available(destination)
     if not (root / "private").is_dir():
         raise FileNotFoundError("Configure private/ com o acervo externo antes de renderizar")
     workspace = root / ".runtime/reports"
     assert_local((workspace,), destination)
     workspace.mkdir(parents=True, exist_ok=True)
-    link = root / "analysis/output"
+    link = root / "analysis" / link_name
     # Checa o ponto de acesso antes de produzir uma versão.
     if link.exists() and not link.is_symlink():
         raise RuntimeError(f"Migre a saída local para o Drive antes de renderizar: {link}")
@@ -52,10 +59,10 @@ def render(root):
             subprocess.run(['quarto', 'render', str(staged_source), '--execute-dir', str(root),
                             '--execute-daemon', '0'],
                            cwd=root, env=env, check=True)
-            html = staged / 'google-play-descritiva.html'
-            if not html.is_file() or not (staged / 'google-play-descritiva_files').is_dir():
+            html = staged / f'{stem}.html'
+            if not html.is_file() or not (staged / f'{stem}_files').is_dir():
                 raise RuntimeError('Quarto não gerou o HTML e seus recursos esperados')
-            comparison = root / 'data/derived/google_play/current/collection_comparison.json'
+            comparison = root / 'data/derived' / data_platform / 'current/collection_comparison.json'
             if comparison.is_file():
                 shutil.copy2(comparison, staged / comparison.name)
             version = datetime.now().strftime('%Y-%m-%dT%H%M%S_%f')

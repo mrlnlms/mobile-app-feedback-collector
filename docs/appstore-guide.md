@@ -20,6 +20,8 @@ O coletor percorre as páginas de cada sort até o limite configurado ou até o 
 
 O Parquet mantém `id_review`, `usuario`, `nota`, `data_avaliacao`, `titulo`, `texto_avaliacao`, `versao_app`, `sorts_encontrados`, `apple_app_id`, `pais` e `plataforma`. `sorts_encontrados` registra em quais ordenações o mesmo ID apareceu; `data_avaliacao` corresponde ao `updated` do RSS. O [contrato do acervo](../data/README.md) descreve os caminhos e o manifesto local.
 
+O painel descritivo da App Store fica em [`analysis/app-store-descritiva.qmd`](../analysis/app-store-descritiva.qmd). Depois da coleta, execute `venv/bin/python -m scripts.reports.render_app_store` para recalcular notas e datas, preservar uma nova versão completa no Drive e atualizar `analysis/app-store-output/app-store-descritiva.html`. O painel lê somente `nota` e `data_avaliacao`; suas médias e volumes descrevem a amostra RSS preservada, sem provar cobertura mensal contínua nem representar a nota pública do app.
+
 ## Cobertura e ordenações
 
 O padrão no YAML usa `mostrecent` e `mosthelpful`. As opções vistas na interface da App Store não implicam feeds RSS públicos equivalentes. A [documentação da Apple sobre reviews](https://developer.apple.com/app-store/ratings-and-reviews/) descreve ordenação no App Store Connect para usuários autorizados do próprio app, e não acesso público aos reviews de outros bancos.

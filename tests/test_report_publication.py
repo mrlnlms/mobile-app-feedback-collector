@@ -19,12 +19,13 @@ class ReportTests(unittest.TestCase):
         self.drive.mkdir()
         (self.root / 'private').symlink_to(self.drive, target_is_directory=True)
         (self.root / 'analysis/google-play-descritiva.qmd').write_text('---\ntitle: Test\n---\n')
+        (self.root / 'analysis/app-store-descritiva.qmd').write_text('---\ntitle: App Store Test\n---\n')
 
     def generate(self, args, **kwargs):
         source = Path(args[2])
         self.assertTrue(source.is_relative_to(self.root / '.runtime'))
         self.assertEqual(kwargs['env']['QUARTO_PYTHON'], str(self.root / 'venv/bin/python'))
-        source.with_suffix('.html').write_text('report')
+        source.with_suffix('.html').write_text(source.stem + ' report')
         assets = source.with_name(source.stem + '_files')
         assets.mkdir()
         (assets / 'test.js').write_text('script')
@@ -35,12 +36,32 @@ class ReportTests(unittest.TestCase):
             second = report.render(self.root)
         self.assertNotEqual(first, second)
         self.assertTrue((first / 'google-play-descritiva.html').is_file())
-        self.assertEqual((self.root / 'analysis/output/google-play-descritiva.html').read_text(), 'report')
+        self.assertEqual((self.root / 'analysis/output/google-play-descritiva.html').read_text(), 'google-play-descritiva report')
         self.assertEqual((self.root / 'analysis/output').resolve(), second.resolve())
         self.assertEqual(list((self.root / '.runtime/reports').glob('render-*')), [])
         for name in ('google-play-descritiva-output', 'google-play-descritiva.html', 'google-play-descritiva_files'):
             self.assertFalse((self.root / 'analysis' / name).is_symlink())
             self.assertFalse((self.root / 'analysis' / name).exists())
+
+    def test_app_store_publishes_separately_and_preserves_google_play(self):
+        with patch.object(report.subprocess, 'run', side_effect=self.generate):
+            google = report.render(self.root)
+            first = report.render(self.root, platform='app_store')
+            second = report.render(self.root, platform='app_store')
+        self.assertEqual((self.root / 'analysis/output').resolve(), google.resolve())
+        self.assertNotEqual(first, second)
+        self.assertEqual((self.root / 'analysis/app-store-output').resolve(), second.resolve())
+        self.assertEqual((self.root / 'analysis/app-store-output/app-store-descritiva.html').read_text(), 'app-store-descritiva report')
+        self.assertEqual((first / 'app-store-descritiva_files/test.js').read_text(), 'script')
+        self.assertEqual(list((self.root / '.runtime/reports').glob('render-*')), [])
+
+    def test_app_store_render_failure_keeps_previous_link(self):
+        with patch.object(report.subprocess, 'run', side_effect=self.generate):
+            first = report.render(self.root, platform='app_store')
+        with patch.object(report.subprocess, 'run', side_effect=subprocess.CalledProcessError(1, 'quarto')):
+            with self.assertRaises(subprocess.CalledProcessError):
+                report.render(self.root, platform='app_store')
+        self.assertEqual((self.root / 'analysis/app-store-output').resolve(), first.resolve())
 
     def test_render_failure_keeps_previous_output_link(self):
         with patch.object(report.subprocess, 'run', side_effect=self.generate):
