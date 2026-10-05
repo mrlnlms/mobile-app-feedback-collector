@@ -57,7 +57,7 @@ Em um clone novo, configure a pasta externa existente (disponível offline) uma 
 venv/bin/python -m scripts.archive_setup --private-dir "CAMINHO DA PASTA NO DRIVE"
 ```
 
-Esse comando configura `private/` e os links de `data/{raw,derived,runs}`. Se já houver arquivos locais, confere a cópia por SHA-256 antes de trocar os caminhos; arquivos divergentes interrompem a migração. Neste Mac, a configuração já está concluída.
+Esse comando configura `private/`, os links de `data/{raw,derived,runs}` e `analysis/output/` quando há um relatório preservado. Também converte os antigos atalhos de relatório para esse único link. Se já houver arquivos locais, confere a cópia por SHA-256 antes de trocar os caminhos; arquivos divergentes interrompem a migração. Neste Mac, a configuração já está concluída.
 
 Os bancos, IDs dos apps, datas iniciais e parâmetros de coleta ficam em [`config.yaml`](config.yaml). Para coletar ou atualizar **um banco** da Play Store:
 
@@ -88,7 +88,7 @@ Para descrever as notas e datas da Google Play, instale `venv/bin/python -m pip 
 venv/bin/python -m scripts.reports.render_google_play
 ```
 
-O comando renderiza uma cópia do [QMD](analysis/google-play-descritiva.qmd) em uma pasta temporária local, publica uma versão completa e conferida em `private/reports/google-play-descritiva/<data-hora>/` e atualiza o link `analysis/google-play-descritiva.html`. Abra esse HTML para consultar o relatório. A fonte QMD permanece versionada. Use esse comando para publicar novas renderizações com seus recursos no Drive.
+O comando renderiza uma cópia do [QMD](analysis/google-play-descritiva.qmd) em uma pasta temporária local, publica uma versão completa e conferida em `private/reports/google-play-descritiva/<data-hora>/` e atualiza o único symlink `analysis/output/`. Abra `analysis/output/google-play-descritiva.html` para consultar o relatório. A fonte QMD permanece versionada. Use esse comando para publicar novas renderizações com seus recursos no Drive.
 
 A renderização de 27/09/2026 e a primeira versão de 05/10/2026 foram preservadas nos caminhos anteriores. Novas versões ficam em pastas com data e hora; uma falha de renderização ou cópia mantém o link para a versão anterior. A aba “Atualização do acervo” mostra a comparação preservada de 05/10 apenas enquanto seus hashes corresponderem às bases atuais; a geração dessa comparação específica não é automática nas próximas coletas. Contagens, notas e séries do relatório são recalculadas com as bases atuais a cada renderização.
 

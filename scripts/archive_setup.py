@@ -94,7 +94,20 @@ def setup(root, private_dir=None):
     analysis = root / 'analysis'
     source_html = analysis / 'google-play-descritiva.html'
     source_assets = analysis / 'google-play-descritiva_files'
-    output_link = analysis / 'google-play-descritiva-output'
+    output_link = analysis / 'output'
+    legacy_output = analysis / 'google-play-descritiva-output'
+    # Confere os links antigos antes de removê-los; nunca remove uma pasta local.
+    if legacy_output.is_symlink():
+        assert_available(legacy_output)
+        if output_link.is_symlink() and output_link.resolve() != legacy_output.resolve():
+            raise RuntimeError('Links de relatório apontam para destinos divergentes')
+        for path in (source_html, source_assets):
+            if (path.exists() or path.is_symlink()) and (
+                    not path.is_symlink() or path.resolve() != (legacy_output / path.name).resolve()):
+                raise RuntimeError(f'Atalho antigo divergente; migração cancelada: {path}')
+        replace_link(output_link, os.readlink(legacy_output))
+    elif legacy_output.exists():
+        raise RuntimeError(f'Caminho antigo não é symlink: {legacy_output}')
     if source_html.is_file() and not source_html.is_symlink():
         if not source_assets.is_dir() or source_assets.is_symlink():
             raise RuntimeError('Recursos locais ausentes; preserve o relatório antes de migrar')
@@ -117,8 +130,14 @@ def setup(root, private_dir=None):
         if complete:
             replace_link(output_link, os.path.relpath(complete[-1], analysis))
     if output_link.exists():
-        replace_link(source_html, 'google-play-descritiva-output/google-play-descritiva.html')
-        replace_link(source_assets, 'google-play-descritiva-output/google-play-descritiva_files')
+        old_links = [path for path in (source_html, source_assets) if path.is_symlink()]
+        for path in old_links:
+            if path.resolve() != (output_link / path.name).resolve():
+                raise RuntimeError(f'Atalho antigo divergente; migração cancelada: {path}')
+        for path in old_links:
+            path.unlink()
+        if legacy_output.is_symlink():
+            legacy_output.unlink()
     print('Acervo configurado: data/{raw,derived,runs} aponta para private/data/.')
     print('Próximas coletas preparam os dados em .runtime/ e publicam no acervo externo.')
 

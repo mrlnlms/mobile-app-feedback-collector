@@ -35,9 +35,12 @@ class ReportTests(unittest.TestCase):
             second = report.render(self.root)
         self.assertNotEqual(first, second)
         self.assertTrue((first / 'google-play-descritiva.html').is_file())
-        self.assertEqual((self.root / 'analysis/google-play-descritiva.html').read_text(), 'report')
-        self.assertEqual((self.root / 'analysis/google-play-descritiva-output').resolve(), second.resolve())
+        self.assertEqual((self.root / 'analysis/output/google-play-descritiva.html').read_text(), 'report')
+        self.assertEqual((self.root / 'analysis/output').resolve(), second.resolve())
         self.assertEqual(list((self.root / '.runtime/reports').glob('render-*')), [])
+        for name in ('google-play-descritiva-output', 'google-play-descritiva.html', 'google-play-descritiva_files'):
+            self.assertFalse((self.root / 'analysis' / name).is_symlink())
+            self.assertFalse((self.root / 'analysis' / name).exists())
 
     def test_render_failure_keeps_previous_output_link(self):
         with patch.object(report.subprocess, 'run', side_effect=self.generate):
@@ -45,7 +48,7 @@ class ReportTests(unittest.TestCase):
         with patch.object(report.subprocess, 'run', side_effect=subprocess.CalledProcessError(1, 'quarto')):
             with self.assertRaises(subprocess.CalledProcessError):
                 report.render(self.root)
-        self.assertEqual((self.root / 'analysis/google-play-descritiva-output').resolve(), first.resolve())
+        self.assertEqual((self.root / 'analysis/output').resolve(), first.resolve())
 
     def test_copy_hash_failure_keeps_previous_output_link(self):
         with patch.object(report.subprocess, 'run', side_effect=self.generate):
@@ -58,7 +61,7 @@ class ReportTests(unittest.TestCase):
         with patch.object(report.subprocess, 'run', side_effect=self.generate), patch.object(report, 'sha256', side_effect=wrong_hash):
             with self.assertRaisesRegex(RuntimeError, 'Hash divergente'):
                 report.render(self.root)
-        self.assertEqual((self.root / 'analysis/google-play-descritiva-output').resolve(), first.resolve())
+        self.assertEqual((self.root / 'analysis/output').resolve(), first.resolve())
         self.assertFalse(list(first.parent.glob('*.pending')))
 
 

@@ -40,6 +40,52 @@ class SetupTests(unittest.TestCase):
         self.assertEqual(source.read_text(), 'local')
         self.assertEqual(target.read_text(), 'external')
 
+    def report_version(self):
+        version = self.drive / 'reports/google-play-descritiva/2026-10-05T120000'
+        version.mkdir(parents=True)
+        (version / 'google-play-descritiva.html').write_text('report')
+        assets = version / 'google-play-descritiva_files'
+        assets.mkdir()
+        (assets / 'test.js').write_text('script')
+        analysis = self.root / 'analysis'
+        analysis.mkdir()
+        return analysis, version
+
+    def test_legacy_report_links_become_one_link_and_setup_can_repeat(self):
+        analysis, version = self.report_version()
+        legacy = analysis / 'google-play-descritiva-output'
+        legacy.symlink_to(version, target_is_directory=True)
+        for name in ('google-play-descritiva.html', 'google-play-descritiva_files'):
+            (analysis / name).symlink_to('google-play-descritiva-output/' + name)
+        setup(self.root, self.drive)
+        setup(self.root, self.drive)
+        self.assertEqual((analysis / 'output').resolve(), version.resolve())
+        self.assertEqual((analysis / 'output/google-play-descritiva.html').read_text(), 'report')
+        self.assertEqual((version / 'google-play-descritiva_files/test.js').read_text(), 'script')
+        for name in ('google-play-descritiva-output', 'google-play-descritiva.html', 'google-play-descritiva_files'):
+            self.assertFalse((analysis / name).is_symlink())
+            self.assertFalse((analysis / name).exists())
+
+    def test_new_clone_restores_only_output_link(self):
+        analysis, version = self.report_version()
+        setup(self.root, self.drive)
+        self.assertEqual((analysis / 'output').resolve(), version.resolve())
+        self.assertEqual([p.name for p in analysis.iterdir()], ['output'])
+
+    def test_divergent_legacy_report_link_is_preserved(self):
+        analysis, version = self.report_version()
+        legacy = analysis / 'google-play-descritiva-output'
+        legacy.symlink_to(version, target_is_directory=True)
+        other = analysis / 'other.html'
+        other.write_text('different report')
+        html = analysis / 'google-play-descritiva.html'
+        html.symlink_to('other.html')
+        with self.assertRaisesRegex(RuntimeError, 'divergente'):
+            setup(self.root, self.drive)
+        self.assertTrue(legacy.is_symlink())
+        self.assertEqual(html.read_text(), 'different report')
+        self.assertFalse((analysis / 'output').is_symlink())
+
     def test_missing_drive_never_creates_a_fake_destination(self):
         target = self.drive / 'missing'
         with self.assertRaises(FileNotFoundError):

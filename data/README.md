@@ -46,7 +46,7 @@ Se já houver arquivos locais, confere sua cópia por SHA-256 antes de substitui
 
 ## Relatórios Quarto
 
-O QMD permanece em Git. `venv/bin/python -m scripts.reports.render_google_play` renderiza localmente, copia e confere uma versão completa no Drive e atualiza `analysis/google-play-descritiva-output`. O HTML e seus recursos em `analysis/` são links para essa versão. A renderização anterior permanece disponível se o comando falhar; cada publicação cria uma pasta com data e hora em `private/reports/google-play-descritiva/`.
+O QMD permanece em Git. `venv/bin/python -m scripts.reports.render_google_play` renderiza localmente, copia e confere uma versão completa no Drive e atualiza o único symlink `analysis/output/`. O HTML e seus recursos ficam juntos dentro dessa versão; abra `analysis/output/google-play-descritiva.html`. Na pasta `analysis/`, apenas o QMD, as dependências e a configuração permanecem como arquivos locais. O comando `scripts.archive_setup` converte os três atalhos antigos para `output/`, conferindo os destinos antes de removê-los. A renderização anterior permanece disponível se o comando falhar; cada publicação cria uma pasta com data e hora em `private/reports/google-play-descritiva/`.
 
 ## Migração de 05/10/2026
 

@@ -34,11 +34,10 @@ def render(root):
     workspace = root / ".runtime/reports"
     assert_local((workspace,), destination)
     workspace.mkdir(parents=True, exist_ok=True)
-    link = root / "analysis/google-play-descritiva-output"
-    # Checa os pontos de acesso antes de produzir uma versão.
-    for path in (link, source.with_suffix('.html'), source.with_name(source.stem + '_files')):
-        if path.exists() and not path.is_symlink():
-            raise RuntimeError(f"Migre a saída local para o Drive antes de renderizar: {path}")
+    link = root / "analysis/output"
+    # Checa o ponto de acesso antes de produzir uma versão.
+    if link.exists() and not link.is_symlink():
+        raise RuntimeError(f"Migre a saída local para o Drive antes de renderizar: {link}")
     with (workspace / "render.lock").open("a") as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -73,10 +72,8 @@ def render(root):
                 if pending.exists():
                     shutil.rmtree(pending)
             replace_link(link, os.path.relpath(published, link.parent))
-            replace_link(source.with_suffix('.html'), 'google-play-descritiva-output/google-play-descritiva.html')
-            replace_link(source.with_name(source.stem + '_files'), 'google-play-descritiva-output/google-play-descritiva_files')
             print(f'Relatório preservado: {published}')
-            print(f'Abrir: {source.with_suffix(".html")}')
+            print(f'Abrir: {link / html.name}')
             return published
 
 
