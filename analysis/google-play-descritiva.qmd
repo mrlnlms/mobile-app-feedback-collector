@@ -19,6 +19,8 @@ O recorte começa em **1º de janeiro de 2025**, para comparar os bancos no mesm
 ```{python}
 from pathlib import Path
 from datetime import datetime
+import hashlib
+import json
 import pandas as pd
 import yaml
 from IPython.display import display, Markdown
@@ -33,11 +35,13 @@ start = pd.Timestamp("2025-01-01")
 frames = []
 sources = []
 selection = []
+source_paths = {}
 
 for slug, bank in config["banks"].items():
     path = raw_dir / slug / "reviews_raw.parquet"
     if not path.is_file():
         raise FileNotFoundError(f"Base local ausente: {path.relative_to(root)}")
+    source_paths[slug] = path
     # A seleção de colunas impede a leitura dos comentários.
     frame = pd.read_parquet(path, columns=["nota", "data_avaliacao"])
     frame["data_avaliacao"] = pd.to_datetime(frame["data_avaliacao"], errors="coerce")
@@ -130,6 +134,46 @@ display(Markdown(
 ```
 
 :::
+
+### Atualização do acervo
+
+```{python}
+comparison_path = root / config["collection"]["derived_dir"] / "collection_comparison.json"
+if comparison_path.is_file():
+    comparison = json.loads(comparison_path.read_text(encoding="utf-8"))
+    before = {row["bank"]: row for row in comparison["before"]["banks"]}
+    after = {row["bank"]: row for row in comparison["after"]["banks"]}
+    matches_current = set(after) == set(source_paths) and all(
+        hashlib.sha256(source_paths[slug].read_bytes()).hexdigest() == row["base_sha256"]
+        for slug, row in after.items()
+    )
+    if matches_current:
+        comparison_rows = []
+        for slug in config["banks"]:
+            old, new = before[slug], after[slug]
+            comparison_rows.append({
+                "Banco": new["name"],
+                "Última antes": pd.Timestamp(old["latest_review_at"]).strftime("%d/%m/%Y"),
+                "Última agora": pd.Timestamp(new["latest_review_at"]).strftime("%d/%m/%Y"),
+                "Avaliações antes": old["scope_reviews"],
+                "Avaliações agora": new["scope_reviews"],
+                "Variação de registros": new["scope_reviews"] - old["scope_reviews"],
+                "Nota média antes": round(old["mean_score"], 3),
+                "Nota média agora": round(new["mean_score"], 3),
+            })
+        display(Markdown(
+            f"Comparação da atualização de **{pd.Timestamp(comparison['after']['recorded_at']):%d/%m/%Y}**, "
+            "no recorte desde janeiro de 2025. A variação mostra o crescimento líquido da base; "
+            "avaliações reencontradas na sobreposição não são contadas duas vezes. "
+            "As notas médias podem mudar tanto pela inclusão de registros quanto pela atualização "
+            "de avaliações já existentes."
+        ))
+        display(pd.DataFrame(comparison_rows).set_index("Banco"))
+    else:
+        display(Markdown("A comparação preservada pertence a outra versão do acervo. As tabelas e gráficos deste relatório usam as bases atuais."))
+else:
+    display(Markdown("Ainda não há uma comparação preservada entre rodadas de atualização."))
+```
 
 ### Arquivos de origem
 

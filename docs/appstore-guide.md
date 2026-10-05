@@ -2,7 +2,19 @@
 
 O coletor consulta o RSS público da App Store brasileira. Execute os comandos a partir da raiz do projeto, com o ambiente indicado no [README](../README.md). O comando `venv/bin/python -m scripts.collect.app_store --bank nubank` coleta um banco. Use `--bank nubank itau` para uma seleção ou `--all` para os 11 bancos. O [`config.yaml`](../config.yaml) mantém os identificadores Android em `app_id` e os IDs iOS em `apple_app_id`. As datas `start_date` são compartilhadas com o pipeline Google Play.
 
-Os dados iOS ficam em `data/raw/app_store/<banco>/reviews_raw.parquet`, com relatórios JSON em `data/runs/app_store/reports/`, checkpoints em `data/runs/app_store/checkpoints/` e versões anteriores em `data/runs/app_store/snapshots/`. Uma coleta interrompida retoma da última página salva. A base existente só é substituída após o sucesso de todos os sorts.
+Os dados iOS ficam em `data/raw/app_store/<banco>/reviews_raw.parquet`, com relatórios JSON em `data/runs/app_store/reports/`, checkpoints ativos em `.runtime/app_store/checkpoints/` e versões anteriores em `data/runs/app_store/snapshots/`. Esses caminhos de `data/` acessam o acervo oficial no Drive por symlink. Uma coleta interrompida retoma da última página salva. A base existente só é substituída após o sucesso de todos os sorts.
+
+## Publicação automática e retomada
+
+O comando `venv/bin/python -m scripts.collect.app_store --all` executa o fluxo completo dos 11 bancos: coleta em checkpoints locais, prepara o Parquet combinado em `.runtime/app_store/staging/<banco>/`, valida IDs, datas e notas, copia para um arquivo temporário no destino oficial e confere seu SHA-256. Antes de substituir a base, preserva e confere a versão anterior em `data/runs/app_store/snapshots/<banco>/`. O histórico anterior é mantido; para um mesmo ID, a versão recém-coletada tem prioridade.
+
+Cada banco tem um bloqueio local contra coletas simultâneas nesta máquina. Se a base mudar durante a coleta, a publicação é cancelada. Um destino externo indisponível interrompe a execução. Não execute duas máquinas gravando na mesma base simultaneamente: o bloqueio é local.
+
+Após a publicação, o estado em `data/runs/app_store/state/<banco>.json` registra o hash, a avaliação mais recente e a data da coleta concluída. Esse estado documenta a publicação; não cria uma fronteira cronológica para o RSS, que continua percorrendo os sorts configurados. O checkpoint e o Parquet preparado são removidos após o sucesso. Se a cópia, o snapshot ou o estado falhar, repita o mesmo comando: um checkpoint completo permite retomar a publicação sem baixar novamente, inclusive quando a base foi substituída antes da falha no estado.
+
+Se todos os feeds vierem vazios, a base oficial é preservada e a execução falha. O mesmo comando pode consultar os feeds novamente na próxima tentativa. Se somente um sort vier vazio, os outros podem concluir a rodada; confira as limitações no relatório. Ao final, coletas com publicação bem-sucedida atualizam `data/manifest.json` automaticamente. Uma falha de manifesto é informada separadamente.
+
+O Drive deve estar disponível offline. A conferência de hash confirma a gravação no destino acessível pelo Mac; não confirma que o aplicativo do Drive concluiu a sincronização na nuvem.
 
 O coletor percorre as páginas de cada sort até o limite configurado ou até o feed terminar, sem parar por data. Depois deduplica por `id_review` e filtra pela data civil do campo `updated` do RSS. `data_avaliacao` é gravada em UTC. O RSS fornece `updated`, que pode representar uma edição da review; ele não fornece necessariamente a data original de publicação.
 
@@ -16,7 +28,31 @@ O coletor tenta no máximo 10 páginas de até 50 reviews por sort e país. `mos
 
 Os IDs iOS foram conferidos pelo [iTunes Search API da Apple](https://developer.apple.com/library/archive/documentation/AudioVideo/Conceptual/iTuneSearchAPI/Searching.html), usando o catálogo brasileiro. A lista de bancos e as datas vieram do `config.yaml` existente.
 
-Para acompanhar uma coleta, leia o relatório em `data/runs/app_store/reports/` antes de interpretar as datas ou repetir o banco. As medições abaixo descrevem **somente a rodada de 24/09/2026**; uma coleta posterior precisa ser avaliada pelo seu próprio relatório.
+Para acompanhar uma coleta, leia o relatório em `data/runs/app_store/reports/` antes de interpretar as datas ou repetir o banco. Cada medição abaixo descreve somente a rodada indicada; uma coleta posterior precisa ser avaliada pelo seu próprio relatório.
+
+### Atualização da amostra em 05/10/2026
+
+Os 11 bancos terminaram sem erros. A união dos dados anteriores com os dados acessíveis nesta rodada passou de **2.861 para 6.253 reviews**, com **3.392 IDs novos**, nenhum ID antigo removido e IDs únicos em todas as bases. Dois IDs existentes tiveram alteração em nota ou data; essa comparação não mede alterações de texto. Datas e notas foram validadas nos Parquets finais.
+
+| Banco | Base anterior | Base atual | IDs novos | Páginas `mostrecent` / `mosthelpful` |
+|---|---:|---:|---:|---:|
+| Nubank | 334 | 535 | 201 | 9 / 3 |
+| Itaú | 450 | 545 | 95 | 0 / 10 |
+| Banco do Brasil | 156 | 656 | 500 | 10 / 2 |
+| Bradesco | 258 | 558 | 300 | 8 / 2 |
+| Santander | 269 | 328 | 59 | 4 / 4 |
+| Inter | 547 | 746 | 199 | 10 / 10 |
+| C6 Bank | 240 | 538 | 298 | 10 / 10 |
+| PicPay | 200 | 548 | 348 | 10 / 10 |
+| Mercado Pago | 109 | 622 | 513 | 10 / 10 |
+| BTG Pactual | 250 | 502 | 252 | 10 / 10 |
+| Caixa | 48 | 675 | 627 | 10 / 5 |
+
+`mostrecent` não alcançou o início configurado em nenhum dos dez bancos com resposta nesse sort. No Itaú, veio vazio; os dados acessíveis por `mosthelpful` chegaram somente a 23/09/2026. Portanto, a execução concluída não significa que a amostra do Itaú esteja atualizada até outubro. Nos demais bancos, a data mais recente na base ficou em 03 ou 04/10/2026 (UTC). IDs novos nesta rodada podem corresponder a reviews antigas que o RSS não havia retornado antes.
+
+A Caixa voltou a responder em `mostrecent`, que estava vazio na rodada de setembro. As quantidades por página e sort variaram entre as consultas; a amostra acumulada continua sem comprovação de cobertura histórica integral.
+
+O relatório está em `data/runs/app_store/reports/report_20261005_150251.json` e a comparação antes/depois em `data/derived/app_store/current/collection_comparison.json`. Bases finais, snapshots anteriores, relatório e comparação foram preservados em `private/data/`, com conferência de SHA-256 das bases e snapshots. A cópia desta rodada foi feita manualmente antes da migração. Depois dela, os caminhos oficiais foram ligados ao Drive e o coletor recebeu a publicação automática descrita acima; nenhuma coleta adicional foi necessária para essa migração. O manifesto foi atualizado após a coleta.
 
 ### Cobertura observada em 24/09/2026
 
@@ -48,7 +84,7 @@ Para verificar se o RSS repete o comportamento observado na Caixa, execute:
 venv/bin/python -m scripts.probe.app_store --bank caixa
 ```
 
-O teste usa os mesmos sorts, páginas máximas, pausas e data inicial da coleta normal, mas grava em uma pasta nova `data/runs/app_store/experiments/caixa_<data-hora>/`. Nela ficam o novo Parquet e `probe.json`, que compara páginas por sort, quantidade de reviews, IDs compartilhados, IDs exclusivos e campos alterados. O script registra o SHA-256 do Parquet original antes e depois da execução. Mesmo se os dois feeds voltarem vazios, a rodada salva um Parquet vazio no experimento e registra o resultado. O comando não usa os checkpoints canônicos nem publica em `data/raw/app_store/caixa/`.
+O teste usa os mesmos sorts, páginas máximas, pausas e data inicial da coleta normal, mas grava em uma pasta nova `data/runs/app_store/experiments/caixa_<data-hora>/`. Nela ficam o novo Parquet e `probe.json`, que compara páginas por sort, quantidade de reviews, IDs compartilhados, IDs exclusivos e campos alterados. O script registra o SHA-256 do Parquet original antes e depois da execução. Mesmo se os dois feeds voltarem vazios, a rodada salva um Parquet vazio no experimento e registra o resultado. O comando não usa os checkpoints canônicos nem publica em `data/raw/app_store/caixa/`. A preparação e os checkpoints do experimento ficam em uma pasta temporária local; em caso de falha, sua evidência parcial é preservada em `partial_local_work/` dentro do experimento.
 
 Ao terminar, guarde o caminho `Comparação completa:` exibido no terminal. Ele identifica a rodada específica para análise posterior.
 

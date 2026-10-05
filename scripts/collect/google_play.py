@@ -16,7 +16,8 @@ import argparse
 import json
 import os
 import pickle
-import shutil
+import tempfile
+import fcntl
 import sys
 import time
 import traceback
@@ -34,6 +35,8 @@ from tenacity import (
     before_sleep_log,
 )
 import logging
+
+from scripts.collect.google_play_storage import collection_reference, publish, recover_publication, save_json, sha256
 
 # ============================================================
 # LOGGING
@@ -56,28 +59,15 @@ def load_config(config_path="config.yaml"):
 
 
 def write_final_base(new_reviews, output_file, start_date, snapshot_dir=None):
-    """Archive the old Parquet, then publish the merged base atomically."""
-    frames = [new_reviews]
-    if output_file.exists():
-        frames.append(pd.read_parquet(output_file))
-    merged = pd.concat(frames, ignore_index=True)
-    dates = pd.to_datetime(merged["data_avaliacao"], errors="coerce")
-    if dates.isna().any():
-        raise ValueError(f"Data inválida em {output_file}")
-    merged = merged.loc[dates >= start_date]
-    merged = merged.drop_duplicates(subset="id_review", keep="first")
-    merged = merged.sort_values("data_avaliacao", ascending=False).reset_index(drop=True)
-    temporary_file = output_file.with_name("reviews_raw.tmp.parquet")
-    merged.to_parquet(temporary_file, index=False)
-    if output_file.exists():
-        snapshots = Path(snapshot_dir) if snapshot_dir is not None else output_file.parent / "snapshots"
-        snapshots.mkdir(parents=True, exist_ok=True)
-        stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-        snapshot = snapshots / f"reviews_raw_before_recollect_{stamp}.parquet"
-        shutil.copy2(output_file, snapshot)
-        logger.info(f"📦 Base anterior preservada: {snapshot}")
-    os.replace(temporary_file, output_file)
-    logger.info(f"💾 Base publicada: {output_file} ({len(merged):,} IDs únicos)")
+    """Compatibilidade: prepara localmente e publica preservando o histórico."""
+    output_file = Path(output_file)
+    snapshots = Path(snapshot_dir) if snapshot_dir is not None else output_file.parent / "snapshots"
+    state_file = snapshots.parent / "state" / (output_file.parent.name + ".json")
+    reference = collection_reference(output_file, state_file, "legacy", start_date)
+    with tempfile.TemporaryDirectory(prefix="google-play-publish-") as directory:
+        merged, _, _ = publish(new_reviews, output_file, snapshots, Path(directory),
+                               state_file, "legacy", start_date, reference,
+                               datetime.now().astimezone().isoformat())
     return merged
 
 
@@ -87,7 +77,8 @@ def write_final_base(new_reviews, output_file, start_date, snapshot_dir=None):
 class CheckpointManager:
     """Gerencia salvamento e carregamento de progresso parcial."""
 
-    def __init__(self, checkpoint_dir, bank_key):
+    def __init__(self, checkpoint_dir, bank_key, identity=None):
+        self.identity = identity
         self.dir = Path(checkpoint_dir)
         self.dir.mkdir(parents=True, exist_ok=True)
         self.filepath = self.dir / f"{bank_key}_checkpoint.parquet"
@@ -96,18 +87,25 @@ class CheckpointManager:
     def exists(self):
         return self.filepath.exists() and self.meta_filepath.exists()
 
-    def save(self, reviews_list, continuation_token, batch_count):
+    def save(self, reviews_list, continuation_token, batch_count, completed=False):
         """Salva progresso parcial."""
         df = pd.DataFrame(reviews_list)
-        df.to_parquet(self.filepath, index=False)
+        temporary = self.filepath.with_suffix(".tmp.parquet")
+        df.to_parquet(temporary, index=False)
+        os.replace(temporary, self.filepath)
         meta = {
             "continuation_token": continuation_token,
             "batch_count": batch_count,
             "total_reviews": len(reviews_list),
             "saved_at": datetime.now().isoformat(),
+            "identity": self.identity,
+            "completed": completed,
+            "checkpoint_sha256": sha256(self.filepath),
         }
-        with open(self.meta_filepath, "wb") as f:
+        temporary_meta = self.meta_filepath.with_suffix(".tmp.pkl")
+        with open(temporary_meta, "wb") as f:
             pickle.dump(meta, f)
+        os.replace(temporary_meta, self.meta_filepath)
         logger.info(
             f"💾 Checkpoint salvo: {len(reviews_list)} reviews (lote #{batch_count})"
         )
@@ -117,11 +115,15 @@ class CheckpointManager:
         df = pd.read_parquet(self.filepath)
         with open(self.meta_filepath, "rb") as f:
             meta = pickle.load(f)
+        if meta.get("identity") != self.identity:
+            raise ValueError("Checkpoint incompatível com a base ou configuração atual; preservado")
+        if meta.get("checkpoint_sha256") != sha256(self.filepath):
+            raise ValueError("Checkpoint incompleto ou alterado; preservado")
         logger.info(
             f"♻️  Checkpoint carregado: {meta['total_reviews']} reviews "
             f"(lote #{meta['batch_count']}, salvo em {meta['saved_at']})"
         )
-        return df.to_dict("records"), meta["continuation_token"], meta["batch_count"]
+        return df.to_dict("records"), meta["continuation_token"], meta["batch_count"], meta.get("completed", False)
 
     def cleanup(self):
         """Remove checkpoint após coleta completa."""
@@ -178,29 +180,63 @@ def make_fetch_batch(max_retries, start_date):
 # PIPELINE DE COLETA
 # ============================================================
 def collect_bank(bank_key, bank_config, global_config):
+    """Impede coletas simultâneas do mesmo banco nesta máquina."""
+    staging = Path(global_config["staging_dir"]) / bank_key
+    official = Path(global_config["output_dir"]).resolve()
+    for local in (staging, Path(global_config["checkpoint_dir"])):
+        resolved = local.resolve()
+        if resolved.is_relative_to(official) or "CloudStorage" in resolved.parts:
+            raise ValueError("Staging e checkpoints da Google Play precisam ficar fora do Drive")
+    staging.mkdir(parents=True, exist_ok=True)
+    with (staging / "collection.lock").open("a") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise RuntimeError(f"Já existe uma coleta local em andamento para {bank_key}") from exc
+        return _collect_bank(bank_key, bank_config, global_config)
+
+
+def _collect_bank(bank_key, bank_config, global_config):
     """
     Coleta reviews de um banco específico.
     Retorna (DataFrame, report_dict).
     """
     app_id = bank_config["app_id"]
     bank_name = bank_config.get("name", bank_key)
-    start_date = datetime.strptime(bank_config["start_date"], "%Y-%m-%d")
+    historical_start = datetime.strptime(bank_config["start_date"], "%Y-%m-%d")
+    output_file = Path(global_config["output_dir"]) / bank_key / "reviews_raw.parquet"
+    state_file = Path(global_config["state_dir"]) / f"{bank_key}.json"
+    staging_dir = Path(global_config["staging_dir"]) / bank_key
+    if recover_publication(output_file, state_file, staging_dir, app_id):
+        CheckpointManager(global_config["checkpoint_dir"], bank_key).cleanup()
+        logger.info("Estado recuperado de uma publicação anterior para %s", bank_key)
+    reference = collection_reference(output_file, state_file, app_id, historical_start,
+                                     global_config["overlap_hours"])
+    start_date = reference["cutoff"]
+    identity = {
+        "app_id": app_id, "historical_start": historical_start.isoformat(),
+        "cutoff": start_date.isoformat(), "base_sha256": reference["base_sha256"],
+        "batch_size": global_config["batch_size"], "lang": "pt", "country": "br",
+    }
 
     batch_size = global_config["batch_size"]
     delay = global_config["delay_seconds"]
     checkpoint_every = global_config["checkpoint_every"]
     max_retries = global_config["max_retries"]
-    output_dir = Path(global_config["output_dir"]) / bank_key
-    output_dir.mkdir(parents=True, exist_ok=True)
 
     fetch_batch = make_fetch_batch(max_retries, start_date)
-    checkpoint = CheckpointManager(global_config["checkpoint_dir"], bank_key)
+    checkpoint = CheckpointManager(global_config["checkpoint_dir"], bank_key, identity)
 
     # Report de execução
     report = {
         "banco": bank_name,
         "app_id": app_id,
-        "data_inicio_filtro": start_date.strftime("%Y-%m-%d"),
+        "data_inicio_filtro": start_date.isoformat(),
+        "data_inicio_historico": historical_start.isoformat(),
+        "modo": "incremental" if reference["base_sha256"] else "primeira coleta",
+        "sobreposicao_horas": 24,
+        "referencia_origem": reference["origin"],
+        "ultima_avaliacao_anterior": reference["latest_review_at"],
         "inicio_execucao": datetime.now().isoformat(),
         "fim_execucao": None,
         "total_reviews_coletados": 0,
@@ -218,7 +254,7 @@ def collect_bank(bank_key, bank_config, global_config):
     print()
     print("=" * 60)
     logger.info(f"🏦 Iniciando coleta: {bank_name} ({app_id})")
-    logger.info(f"📅 Período: {start_date.strftime('%Y-%m-%d')} → hoje")
+    logger.info(f"📅 Fronteira: {start_date.isoformat()} → mais recentes ({report['modo']})")
     logger.info(f"⚙️  Lote: {batch_size} | Delay: {delay}s | Retries: {max_retries}")
     print("=" * 60)
 
@@ -226,22 +262,27 @@ def collect_bank(bank_key, bank_config, global_config):
     all_reviews = []
     continuation_token = None
     batch_count = 0
+    stop_triggered = False
 
     if checkpoint.exists():
-        all_reviews, continuation_token, batch_count = checkpoint.load()
-        if getattr(continuation_token, "token", None) is None:
+        all_reviews, continuation_token, batch_count, stop_triggered = checkpoint.load()
+        if stop_triggered:
+            report["early_stop"] = True
+        if not stop_triggered and getattr(continuation_token, "token", None) is None:
             raise RuntimeError(
                 f"Checkpoint sem token de retomada: {checkpoint.meta_filepath}"
             )
 
     # ---- Loop de coleta ----
-    stop_triggered = False
-
     while not stop_triggered:
         try:
             result, continuation_token = fetch_batch(
                 app_id, batch_size, continuation_token
             )
+        except KeyboardInterrupt:
+            if all_reviews and getattr(continuation_token, "token", None) is not None:
+                checkpoint.save(all_reviews, continuation_token, batch_count)
+            raise
         except CoverageUnconfirmed as e:
             logger.warning(f"⚠️  Cobertura não confirmada: {e}")
             report["erros"].append(str(e))
@@ -282,10 +323,10 @@ def collect_bank(bank_key, bank_config, global_config):
                 report["early_stop"] = True
                 report["early_stop_date"] = review_date.strftime("%Y-%m-%d")
                 logger.info(
-                    f"🛑 Early stop! Review de {review_date.strftime('%Y-%m-%d')} "
-                    f"anterior a {start_date.strftime('%Y-%m-%d')}"
+                    f"🛑 Fronteira alcançada: review de {review_date.isoformat()} "
+                    f"anterior a {start_date.isoformat()}"
                 )
-                break
+                continue
 
             all_reviews.append(review)
             added_this_batch += 1
@@ -303,7 +344,12 @@ def collect_bank(bank_key, bank_config, global_config):
 
         # Delay entre lotes
         if not stop_triggered:
-            time.sleep(delay)
+            try:
+                time.sleep(delay)
+            except KeyboardInterrupt:
+                if all_reviews and getattr(continuation_token, "token", None) is not None:
+                    checkpoint.save(all_reviews, continuation_token, batch_count)
+                raise
 
     # ---- Salvar resultado final ----
     report["total_reviews_coletados"] = len(all_reviews)
@@ -319,6 +365,10 @@ def collect_bank(bank_key, bank_config, global_config):
 
     if report["status"] != "em andamento":
         return pd.DataFrame(), report
+
+    # Preserve the complete local result if validation/publication fails.
+    if all_reviews:
+        checkpoint.save(all_reviews, continuation_token, batch_count, completed=True)
 
     if not all_reviews:
         logger.warning("⚠️  Nenhum review coletado!")
@@ -348,17 +398,22 @@ def collect_bank(bank_key, bank_config, global_config):
         drop=True
     )
 
-    output_file = output_dir / "reviews_raw.parquet"
-    write_final_base(
-        df_clean, output_file, start_date,
-        Path(global_config["snapshot_dir"]) / bank_key,
+    merged, state, snapshot = publish(
+        df_clean, output_file, Path(global_config["snapshot_dir"]) / bank_key,
+        staging_dir, state_file, app_id, historical_start, reference,
+        report["inicio_execucao"],
     )
+    report["reviews_na_base"] = len(merged)
+    report["base_sha256"] = state["base_sha256"]
+    report["estado"] = str(state_file)
+    report["snapshot"] = str(snapshot) if snapshot else None
+    report["publicacao"] = "gravada e conferida no destino; sincronização da nuvem não verificada"
     checkpoint.cleanup()
 
     if report["status"] == "em andamento":
         report["status"] = "concluído"
 
-    return df_clean, report
+    return merged, report
 
 
 # ============================================================
@@ -466,6 +521,8 @@ def main():
         default="config.yaml",
         help="Caminho do arquivo de configuração (padrão: config.yaml)",
     )
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Mostrar referência e fronteira por banco sem consultar a loja ou gravar arquivos")
 
     args = parser.parse_args()
 
@@ -488,6 +545,19 @@ def main():
                     f"Disponíveis: {available}"
                 )
                 sys.exit(1)
+
+    if args.dry_run:
+        for key in bank_keys:
+            bank = banks[key]
+            reference = collection_reference(
+                Path(global_config["output_dir"]) / key / "reviews_raw.parquet",
+                Path(global_config["state_dir"]) / f"{key}.json", bank["app_id"],
+                datetime.fromisoformat(bank["start_date"]), global_config["overlap_hours"],
+            )
+            print(f"{key}: última avaliação={reference['latest_review_at']}; "
+                  f"coletar até={reference['cutoff'].isoformat()}; "
+                  f"referência={reference['origin']}")
+        return
 
     logger.info(f"🚀 Iniciando pipeline para {len(bank_keys)} banco(s): "
                 f"{', '.join(bank_keys)}")
@@ -521,6 +591,16 @@ def main():
                 "early_stop_date": None,
                 "status": "interrompido por erro",
             })
+
+    # Refresh the versioned manifest after any successful publication.
+    if any(report["status"] == "concluído" for report in reports):
+        from scripts.archive_manifest import build
+        try:
+            save_json(Path(global_config["manifest_file"]), build(config))
+        except Exception as exc:
+            logger.error("Bases publicadas, mas atualização do manifesto falhou: %s", exc)
+            generate_report(reports, global_config["report_dir"])
+            sys.exit(1)
 
     # Relatório final
     success = generate_report(reports, global_config["report_dir"])

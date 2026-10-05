@@ -1,5 +1,7 @@
-/private/
+# Track the private symlink, never its contents if replaced by a directory.
+/private/**
 /venv/
+/.runtime/
 **/__pycache__/
 *.py[cod]
 .DS_Store
@@ -8,6 +10,10 @@
 /data/raw/
 /data/derived/
 /data/runs/
+# Local access symlinks into private/data.
+/data/raw
+/data/derived
+/data/runs
 
 # Legacy locations until their contents are classified and moved.
 /output/
@@ -22,3 +28,5 @@
 # Rendered local descriptive report.
 /analysis/*.html
 /analysis/*_files/
+/analysis/*_files
+/analysis/google-play-descritiva-output

@@ -6,7 +6,9 @@ Uso: venv/bin/python -m scripts.probe.app_store --bank caixa
 import argparse
 import hashlib
 import json
+import shutil
 import sys
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -84,7 +86,10 @@ def run_probe(bank_key, config, probe_parent):
     run_root = probe_parent.resolve() / f"{bank_key}_{run_id}"
     run_root.mkdir(parents=True, exist_ok=False)
     settings["output_dir"] = str(run_root)
-    settings["checkpoint_dir"] = str(run_root / "checkpoints")
+    workspace = tempfile.TemporaryDirectory(prefix="app-store-probe-")
+    settings["checkpoint_dir"] = str(Path(workspace.name) / "checkpoints")
+    settings["staging_dir"] = str(Path(workspace.name) / "staging")
+    settings["state_dir"] = str(run_root / "state")
     settings["snapshot_dir"] = str(run_root / "snapshots")
     repeated = run_root / bank_key / "reviews_raw.parquet"
     manifest_path = run_root / "probe.json"
@@ -123,6 +128,8 @@ def run_probe(bank_key, config, probe_parent):
         print(f"Comparação completa: {manifest_path}")
         return run_root
     except BaseException as exc:
+        # Preserva a evidência parcial, sem transformá-la em checkpoint canônico.
+        shutil.copytree(workspace.name, run_root / "partial_local_work", dirs_exist_ok=True)
         manifest.update({"status": "interrompido", "finished_at": datetime.now(timezone.utc).isoformat(), "error": str(exc)})
         if original.is_file():
             manifest["original_sha256_after"] = sha256(original)
@@ -130,6 +137,9 @@ def run_probe(bank_key, config, probe_parent):
         save_json_atomic(manifest_path, manifest)
         print(f"Teste interrompido; arquivos parciais em {run_root}", file=sys.stderr)
         raise
+    finally:
+        # O experimento pode ser repetido; checkpoint ativo não entra no Drive.
+        workspace.cleanup()
 
 
 def main():

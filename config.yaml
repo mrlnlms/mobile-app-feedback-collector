@@ -97,7 +97,11 @@ collection:
   checkpoint_every: 5           # Salvar progresso a cada N lotes
   max_retries: 5                # Tentativas com backoff exponencial
   output_dir: "data/raw/google_play"
-  checkpoint_dir: "data/runs/google_play/checkpoints"
+  checkpoint_dir: ".runtime/google_play/checkpoints"
+  staging_dir: ".runtime/google_play/staging"
+  overlap_hours: 24
+  state_dir: "data/runs/google_play/state"
+  manifest_file: "data/manifest.json"
   report_dir: "data/runs/google_play/reports"
   snapshot_dir: "data/runs/google_play/snapshots"
   derived_dir: "data/derived/google_play/current"
@@ -110,7 +114,10 @@ app_store:
   delay_seconds: 2
   max_retries: 5
   output_dir: "data/raw/app_store"
-  checkpoint_dir: "data/runs/app_store/checkpoints"
+  checkpoint_dir: ".runtime/app_store/checkpoints"
+  staging_dir: ".runtime/app_store/staging"
+  state_dir: "data/runs/app_store/state"
+  manifest_file: "data/manifest.json"
   report_dir: "data/runs/app_store/reports"
   snapshot_dir: "data/runs/app_store/snapshots"
   probe_dir: "data/runs/app_store/experiments"

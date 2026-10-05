@@ -34,11 +34,11 @@ Os arquivos `reviews_raw.parquet` são o ponto de partida para outras pesquisas.
 
 ## O que existe hoje
 
-- **Google Play:** avaliações de 11 apps bancários em `data/raw/google_play/<banco>/reviews_raw.parquet`. O coletor usa a ordenação por mais recentes, interrompe a busca ao passar da data configurada e combina novas coletas com a base local pelo ID da avaliação.
-- **App Store:** avaliações dos mesmos 11 apps em `data/raw/app_store/<banco>/reviews_raw.parquet`, obtidas pelo RSS público brasileiro. Essa fonte oferece uma amostra menor e cobertura histórica desigual entre os bancos.
+- **Google Play:** avaliações de 11 apps bancários em `data/raw/google_play/<banco>/reviews_raw.parquet`, com armazenamento real no Drive via symlink. Atualizações coletam até 24 horas antes da avaliação mais recente preservada; sem base, usam a data inicial configurada. O coletor prepara o resultado localmente e publica a base combinada pelo ID da avaliação, preservando o histórico e a versão anterior.
+- **App Store:** avaliações dos mesmos 11 apps em `data/raw/app_store/<banco>/reviews_raw.parquet`, obtidas pelo RSS público brasileiro e armazenadas no Drive via symlink. O coletor prepara a base localmente, valida, preserva um snapshot e publica automaticamente no destino oficial. Essa fonte oferece uma amostra menor e cobertura histórica desigual entre os bancos.
 - **Primeira pesquisa:** investigação de Pix por voz ou áudio, com resultados guardados localmente em `private/research/pix-voz/`.
 
-As bases e saídas completas ficam em `data/` na raiz, em pastas ignoradas pelo Git. Planos, pesquisas específicas e mídia de trabalho ficam em `private/`, também ignorada. O [contrato do acervo local](data/README.md) explica os caminhos e o manifesto versionado; uma cópia só do Git contém código, configuração e documentação operacional, sem os Parquets.
+As bases e saídas completas ficam em `data/` na raiz, em pastas ignoradas pelo Git. Planos, pesquisas específicas e mídia de trabalho ficam em `private/`, um symlink para a pasta `Mobile App Feedback Collector` no Google Drive do proprietário. O Git pode registrar o link, sem incluir os arquivos de destino; em outra máquina, o destino precisa ser configurado. O [contrato do acervo local](data/README.md) explica os caminhos, o acervo oficial no Drive e o manifesto versionado; uma cópia só do Git contém código, configuração e documentação operacional, sem os Parquets.
 
 Encontrar uma avaliação antiga não garante que todas as avaliações entre ela e hoje estejam disponíveis. Para interpretar ausências ou comparar períodos, consulte os relatórios de coleta e a cobertura efetivamente observada em cada fonte.
 
@@ -50,6 +50,14 @@ O projeto usa Python. Para preparar o ambiente local:
 python3 -m venv venv
 venv/bin/python -m pip install -r requirements.txt
 ```
+
+Em um clone novo, configure a pasta externa existente (disponível offline) uma vez:
+
+```bash
+venv/bin/python -m scripts.archive_setup --private-dir "CAMINHO DA PASTA NO DRIVE"
+```
+
+Esse comando configura `private/` e os links de `data/{raw,derived,runs}`. Se já houver arquivos locais, confere a cópia por SHA-256 antes de trocar os caminhos; arquivos divergentes interrompem a migração. Neste Mac, a configuração já está concluída.
 
 Os bancos, IDs dos apps, datas iniciais e parâmetros de coleta ficam em [`config.yaml`](config.yaml). Para coletar ou atualizar **um banco** da Play Store:
 
@@ -65,6 +73,23 @@ venv/bin/python -m scripts.collect.app_store --bank nubank
 
 Os guias da [Google Play](docs/playstore-guide.md) e da [App Store](docs/appstore-guide.md) explicam a atualização, os relatórios e os limites de cobertura. Consultas sobre temas específicos partem dos Parquets existentes; o exemplo de Pix por voz e seu método ficam na pesquisa local em `private/research/pix-voz/`.
 
-Para descrever as notas e datas das avaliações da Google Play, use o [relatório Quarto](analysis/google-play-descritiva.qmd). Com as bases locais presentes, instale `venv/bin/python -m pip install -r analysis/requirements.txt` e rode `QUARTO_PYTHON=venv/bin/python quarto render analysis/google-play-descritiva.qmd`. O HTML gerado em `analysis/` fica local e é recalculado a partir dos Parquets a cada renderização.
+Para atualizar os 11 bancos de cada plataforma:
+
+```bash
+venv/bin/python -m scripts.collect.google_play --all
+venv/bin/python -m scripts.collect.app_store --all
+```
+
+Antes de uma atualização Google Play, `venv/bin/python -m scripts.collect.google_play --all --dry-run` mostra as fronteiras de coleta sem acessar a loja. Os dois coletores usam `.runtime/<plataforma>/` para checkpoints e preparação local. Após publicação confirmada, removem o checkpoint e o Parquet preparado; bases, estados, snapshots e relatórios ficam no Drive. Em caso de falha, repita o mesmo comando para retomar. O manifesto é atualizado automaticamente ao final de comandos com publicação bem-sucedida. As coletas não renderizam o Quarto automaticamente.
+
+Para descrever as notas e datas da Google Play, instale `venv/bin/python -m pip install -r analysis/requirements.txt` e, com o Quarto instalado, execute:
+
+```bash
+venv/bin/python -m scripts.reports.render_google_play
+```
+
+O comando renderiza uma cópia do [QMD](analysis/google-play-descritiva.qmd) em uma pasta temporária local, publica uma versão completa e conferida em `private/reports/google-play-descritiva/<data-hora>/` e atualiza o link `analysis/google-play-descritiva.html`. Abra esse HTML para consultar o relatório. A fonte QMD permanece versionada. Use esse comando para publicar novas renderizações com seus recursos no Drive.
+
+A renderização de 27/09/2026 e a primeira versão de 05/10/2026 foram preservadas nos caminhos anteriores. Novas versões ficam em pastas com data e hora; uma falha de renderização ou cópia mantém o link para a versão anterior. A aba “Atualização do acervo” mostra a comparação preservada de 05/10 apenas enquanto seus hashes corresponderem às bases atuais; a geração dessa comparação específica não é automática nas próximas coletas. Contagens, notas e séries do relatório são recalculadas com as bases atuais a cada renderização.
 
 O projeto começou como resposta a uma demanda urgente e está sendo estruturado a partir do que funcionou. Seu valor central é manter as avaliações acessíveis para perguntas futuras, preservando a possibilidade de voltar às mensagens que sustentam cada achado.
