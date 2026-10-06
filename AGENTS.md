@@ -31,9 +31,11 @@ Tests use standard-library `unittest` and temporary files with mocks for collect
 
 Recent commits use short area-prefixed subjects, such as `feat:`, `refactor:`, `docs:`, or `analysis:`. In pull requests, describe the affected platform or report, archive impact, and validation performed.
 
-## Work Plans
+## Work Plans & Handoffs
 
 When using the `writing-plans` skill, save plans under `private/workstreams/plans/<workstream>/`, not `docs/superpowers/plans/`. Keep plans for the same workstream together. The App Store AMP/Web investigation and collection enablement plans belong to `private/workstreams/plans/app-store-amp-web-collection/`. Plans in `private/` remain outside Git; commit the project instructions, code, tests, and public documentation separately.
+
+Save session handoffs and investigation checkpoints under `private/workstreams/handoffs/<workstream>/`, not in the versioned `docs/` tree. The Inter AMP/Web handoff lives in `private/workstreams/handoffs/app-store-amp-web-collection/inter-handoff.md`. Keep `docs/` focused on durable repository contracts and operating guides; handoffs in `private/` remain outside Git.
 
 ## Archive & Privacy
 
