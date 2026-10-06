@@ -17,6 +17,7 @@ Estado verificado em 2026-10-06. Este registro permite retomar o trabalho sem de
 - Comparação Web × RSS: `data/runs/app_store/experiments/inter_web_rss_analysis_20261006T015618_935918Z_873ccf/`.
 - Análise temporal: `data/runs/app_store/experiments/inter_web_temporal_semantics_20261005T235146_046193Z_c4cec0/` e `inter_web_temporal_semantics_20261006T015635_961139Z_64d2a5/` no mesmo diretório de experimentos.
 - Relatório privado: `private/research/amp-appstore-investigation/inter-web-resume-temporal-followup.md`; os spikes anteriores estão nessa pasta.
+- Os três planos históricos desta mesma frente AMP/Web estão reunidos em `private/workstreams/plans/app-store-amp-web-collection/`; o `README.md` dessa pasta aponta para este checkpoint e para o fechamento privado.
 - RSS canônico de entrada: `data/raw/app_store/inter/reviews_raw.parquet`, SHA-256 `8463e75edf03a03ff4ff20ffb43ef9e599886e8cc630cd9b5420ace146595c3d`. A auditoria anterior confirmou que os 11 Parquets canônicos App Store permaneceram inalterados.
 
 ## Decisões para a promoção

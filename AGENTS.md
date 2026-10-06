@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-`scripts/collect/` contains the Google Play and App Store collectors and storage helpers. `scripts/reports/` publishes Quarto reports; `scripts/research/` holds topic-specific searches; `scripts/probe/` and `scripts/history/` contain experiments and the original proof of concept. Source-specific operating guides live in `docs/`, report sources in `analysis/*.qmd`, and automated tests in `tests/`. `config.yaml` defines banks, app IDs, dates, and collection settings. `data/README.md` documents the archive; `data/manifest.json` records its versioned inventory.
+`scripts/collect/` contains the Google Play and App Store collectors and storage helpers. `scripts/reports/` publishes Quarto reports; `scripts/research/` holds topic-specific searches. Source-specific operating guides live in `docs/`, report sources in `analysis/*.qmd`, and automated tests in `tests/`. `config.yaml` defines banks, app IDs, dates, and collection settings. `data/README.md` documents the archive; `data/manifest.json` records its versioned inventory.
 
 ## Build, Test, and Development Commands
 
@@ -21,16 +21,22 @@ The dry run reports Google Play collection boundaries without fetching or writin
 
 ## Coding Style & Naming Conventions
 
-Use four-space indentation and Python `snake_case` for modules, functions, variables, and test methods. Keep platform-specific behavior in its corresponding module and use `pathlib.Path` for paths, following the existing code. No formatter or linter is configured; keep changes consistent with surrounding files. Name tests `tests/test_*.py` and methods `test_*`.
+Use four-space indentation and Python `snake_case`. Keep Google Play and App Store separate where pagination, coverage, timestamps, state, or recovery differ. Use `pathlib.Path` for paths, following the existing code. No formatter or linter is configured; keep changes consistent with surrounding files. Name tests `tests/test_*.py` and methods `test_*`.
 
 ## Testing Guidelines
 
-Tests use standard-library `unittest` and temporary files with mocks for collection and publication behavior. Run `venv/bin/python -m unittest discover -s tests` before proposing changes. Add focused tests when changing collection boundaries, ID deduplication, archive publication, recovery, or report links. No coverage threshold is configured.
+Tests use standard-library `unittest` and temporary files with mocks for collection and publication behavior. Run `venv/bin/python -m unittest discover -s tests` before proposing changes. Preserve existing failure tests and add focused tests when changing collection, publication, deduplication, checkpoints, snapshots, state, or recovery.
 
 ## Commit & Pull Request Guidelines
 
-Recent commits use short, imperative subjects prefixed by area, such as `feat:`, `refactor:`, `docs:`, or `analysis:`. In pull requests, describe the affected platform or report, data or archive impact, and validation performed. Link a related issue when one exists; include screenshots for visible report changes.
+Recent commits use short area-prefixed subjects, such as `feat:`, `refactor:`, `docs:`, or `analysis:`. In pull requests, describe the affected platform or report, archive impact, and validation performed.
+
+## Work Plans
+
+When using the `writing-plans` skill, save plans under `private/workstreams/plans/<workstream>/`, not `docs/superpowers/plans/`. Keep plans for the same workstream together. The App Store AMP/Web investigation and collection enablement plans belong to `private/workstreams/plans/app-store-amp-web-collection/`. Plans in `private/` remain outside Git; commit the project instructions, code, tests, and public documentation separately.
 
 ## Archive & Privacy
 
-`private/` points to an external local archive. `data/raw/`, `data/derived/`, `data/runs/`, `.runtime/`, and rendered report outputs are local or linked data, not source files. Do not commit raw reviews, Parquet files, or research material from `private/`. Preserve symlinks and consult `data/README.md` before changing archive paths.
+`data/raw/<platform>/<bank>/reviews_raw.parquet` holds the current canonical bases. Publish through the existing `scripts/collect/*_storage.py` helpers: stage locally, validate, deduplicate by `id_review`, verify hashes, snapshot the previous base, and replace safely. Never write directly to a canonical Parquet.
+
+`private/` links to the external archive; `data/{raw,derived,runs}/` accesses it. Keep collector staging, checkpoints, locks, and unfinished publication artifacts in local `.runtime/`, outside the official archive. An unavailable archive symlink must fail, never appear to be an empty base or first collection. Use `scripts/probe/` for isolated experiments before promoting behavior to collectors; probes must preserve canonical bases. Do not commit raw reviews, Parquets, or private research. Consult `data/README.md` before changing archive paths.
