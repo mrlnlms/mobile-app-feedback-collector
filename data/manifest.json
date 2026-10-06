@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-06T13:12:42.762217-03:00",
+  "generated_at": "2026-10-06T18:30:52.091371-03:00",
   "files": [
     {
       "path": "data/raw/google_play/nubank/reviews_raw.parquet",
@@ -577,6 +577,35 @@
       "rss_updated_utc_max": "2026-10-04T11:54:26+00:00",
       "web_date_utc_min": "2024-12-31T04:54:04+00:00",
       "web_date_utc_max": "2026-10-04T17:13:07+00:00"
+    },
+    {
+      "path": "data/raw/app_store/caixa/reviews_web.parquet",
+      "kind": "web",
+      "platform": "app_store",
+      "bank": "caixa",
+      "size_bytes": 743172,
+      "sha256": "2197bc3f0bd8a547fa74fc10d011a7efff9ef4d28a724b73db217facce8d0106",
+      "reviews": 5300,
+      "oldest_utc": "2024-12-31T20:07:32+00:00",
+      "newest_utc": "2026-10-04T01:45:08+00:00",
+      "date_field": "web_date_utc"
+    },
+    {
+      "path": "data/derived/app_store/caixa/reviews_reconciled.parquet",
+      "kind": "reconciled",
+      "platform": "app_store",
+      "bank": "caixa",
+      "size_bytes": 827538,
+      "sha256": "b2411a77a9189f48cf5fbf398ed3ddf224bac6494f5951794bfe3273deed4272",
+      "reviews": 5300,
+      "source_counts": {
+        "web_only": 4625,
+        "rss_web": 675
+      },
+      "rss_updated_utc_min": "2025-02-18T11:07:15+00:00",
+      "rss_updated_utc_max": "2026-10-04T01:45:08+00:00",
+      "web_date_utc_min": "2024-12-31T20:07:32+00:00",
+      "web_date_utc_max": "2026-10-04T01:45:08+00:00"
     },
     {
       "path": "data/runs/app_store/snapshots_reconciled/inter/reviews_reconciled_before_20261006T021504_642201Z.parquet",
