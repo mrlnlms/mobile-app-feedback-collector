@@ -30,7 +30,7 @@ from scripts.collect.storage import assert_available, assert_local
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("app_store")
 SUPPORTED_SORTS = {"mostrecent", "mosthelpful", "mostcritical", "mostfavourable", "mostfavorable"}
-COLS = ["id_review", "usuario", "nota", "data_avaliacao", "titulo", "texto_avaliacao", "versao_app", "sorts_encontrados", "apple_app_id", "pais", "plataforma"]
+COLS = ["id_review", "usuario", "nota", "data_avaliacao", "rss_updated_raw", "titulo", "texto_avaliacao", "versao_app", "sorts_encontrados", "apple_app_id", "pais", "plataforma"]
 
 
 def fetch_page(app_id, country, sort, page, max_retries):
@@ -76,6 +76,7 @@ def parse_review(entry, app_id, country, sort):
         "usuario": label(entry.get("author", {}), "name"),
         "nota": int(label(entry, "im:rating")),
         "data_avaliacao": updated,
+        "rss_updated_raw": updated,
         "titulo": label(entry, "title"),
         "texto_avaliacao": label(entry, "content"),
         "versao_app": label(entry, "im:version"),

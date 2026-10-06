@@ -5,13 +5,14 @@
 | Caminho | Conteúdo |
 |---|---|
 | `raw/google_play/<banco>/` | Base principal `reviews_raw.parquet` da Google Play. |
-| `raw/app_store/<banco>/` | Base principal `reviews_raw.parquet` da App Store brasileira. |
+| `raw/app_store/<banco>/` | RSS `reviews_raw.parquet`; Web `reviews_web.parquet` quando já validada para o banco. |
 | `derived/google_play/` | Resultados por banco, primeira rodada e comparação antes/depois. |
 | `derived/app_store/current/` | Comparação preservada da atualização RSS de 05/10/2026. |
+| `derived/app_store/<banco>/reviews_reconciled.parquet` | União RSS + Web por ID, com proveniência e timestamps separados; por enquanto publicada somente para o Inter. |
 | `derived/pix_voz/` | Consultas lexicais: auditoria inicial e resultados recalculados em 27/09/2026. |
 | `derived/poc/` | CSVs da PoC original. |
 | `runs/google_play/` | Relatórios, estado por banco, snapshots e checkpoints históricos. |
-| `runs/app_store/` | Relatórios, estado por banco, snapshots, experimentos e checkpoints históricos. |
+| `runs/app_store/` | Relatórios, estado por banco, snapshots, experimentos, payloads Web preservados e recibos de reconciliação. |
 | `runs/migration/` | Recibos de preservação e verificação da migração. |
 
 ## Operação
@@ -20,7 +21,7 @@ O [`config.yaml`](../config.yaml) define os caminhos. Os dois coletores preparam
 
 Os arquivos de estado registram a data da coleta concluída, a avaliação mais recente e o hash da base. A Google Play usa uma fronteira com sobreposição de 24 horas; a App Store continua percorrendo o RSS, sem parada cronológica. Consulte os guias da [Google Play](../docs/playstore-guide.md) e da [App Store](../docs/appstore-guide.md).
 
-O [manifesto](manifest.json) registra caminho, hash, tamanho, número de reviews e datas extremas dos Parquets. Não contém textos de avaliações nem substitui os próprios arquivos. É atualizado pelos comandos de coleta após publicações bem-sucedidas. Para recalculá-lo separadamente:
+O [manifesto](manifest.json) registra caminho, hash, tamanho, número de reviews e datas extremas dos Parquets. Para o corpus reconciliado, registra os limites temporais RSS e Web separadamente, sem inventar uma data universal. Não contém textos de avaliações nem substitui os próprios arquivos. Os coletores RSS e Google Play o atualizam após publicações bem-sucedidas; após publicar Web ou reconciliar, recalcule-o separadamente:
 
 ```bash
 venv/bin/python -m scripts.archive_manifest
