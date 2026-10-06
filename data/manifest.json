@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-05T23:15:28.072906-03:00",
+  "generated_at": "2026-10-06T13:12:42.762217-03:00",
   "files": [
     {
       "path": "data/raw/google_play/nubank/reviews_raw.parquet",
@@ -517,6 +517,36 @@
       "reviews": 6,
       "oldest_utc": "2025-05-17T15:51:29+00:00",
       "newest_utc": "2026-08-06T20:37:33+00:00"
+    },
+    {
+      "path": "data/raw/app_store/nubank/reviews_web.parquet",
+      "kind": "web",
+      "platform": "app_store",
+      "bank": "nubank",
+      "size_bytes": 952796,
+      "sha256": "ca58f5bccf804005dab751a1a9139ca0efc3ac3d9bf9102ec274bb0d588dc38b",
+      "reviews": 7090,
+      "oldest_utc": "2024-10-31T10:59:34+00:00",
+      "newest_utc": "2026-10-05T02:29:55+00:00",
+      "date_field": "web_date_utc"
+    },
+    {
+      "path": "data/derived/app_store/nubank/reviews_reconciled.parquet",
+      "kind": "reconciled",
+      "platform": "app_store",
+      "bank": "nubank",
+      "size_bytes": 1023972,
+      "sha256": "e2868a46c26080c8752ac656e62f76e3af11f3db60b1e0d86f737622ef8c212e",
+      "reviews": 7093,
+      "source_counts": {
+        "web_only": 6558,
+        "rss_web": 532,
+        "rss_only": 3
+      },
+      "rss_updated_utc_min": "2024-11-09T20:56:37+00:00",
+      "rss_updated_utc_max": "2026-10-04T11:02:10+00:00",
+      "web_date_utc_min": "2024-10-31T10:59:34+00:00",
+      "web_date_utc_max": "2026-10-05T02:29:55+00:00"
     },
     {
       "path": "data/raw/app_store/inter/reviews_web.parquet",
