@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-06T18:30:52.091371-03:00",
+  "generated_at": "2026-10-07T01:38:32.858915-03:00",
   "files": [
     {
       "path": "data/raw/google_play/nubank/reviews_raw.parquet",
@@ -547,6 +547,48 @@
       "rss_updated_utc_max": "2026-10-04T11:02:10+00:00",
       "web_date_utc_min": "2024-10-31T10:59:34+00:00",
       "web_date_utc_max": "2026-10-05T02:29:55+00:00"
+    },
+    {
+      "path": "data/raw/app_store/itau/reviews_web.parquet",
+      "kind": "web",
+      "platform": "app_store",
+      "bank": "itau",
+      "size_bytes": 953593,
+      "sha256": "b0a1aa9fe6fa2486c76b31e9c81c42e3ccbd0af67eec7b49c7a34662fbea25f6",
+      "reviews": 6957,
+      "oldest_utc": "2024-12-30T23:33:02+00:00",
+      "newest_utc": "2026-10-05T03:31:12+00:00",
+      "date_field": "web_date_utc"
+    },
+    {
+      "path": "data/derived/app_store/itau/reviews_reconciled.parquet",
+      "kind": "reconciled",
+      "platform": "app_store",
+      "bank": "itau",
+      "size_bytes": 1010355,
+      "sha256": "1295dcffc399704284c476349714533b97d17af43c1fd5994a573aa4f206dffa",
+      "reviews": 6962,
+      "source_counts": {
+        "web_only": 6417,
+        "rss_web": 540,
+        "rss_only": 5
+      },
+      "rss_updated_utc_min": "2025-01-07T09:32:20+00:00",
+      "rss_updated_utc_max": "2026-09-23T13:31:00+00:00",
+      "web_date_utc_min": "2024-12-30T23:33:02+00:00",
+      "web_date_utc_max": "2026-10-05T03:31:12+00:00"
+    },
+    {
+      "path": "data/raw/app_store/banco_do_brasil/reviews_web.parquet",
+      "kind": "web",
+      "platform": "app_store",
+      "bank": "banco_do_brasil",
+      "size_bytes": 321670,
+      "sha256": "8db19364c090971e64431d15ae3929595666fb925a17f90c33982018ac98033a",
+      "reviews": 3810,
+      "oldest_utc": "2026-09-14T17:24:42+00:00",
+      "newest_utc": "2026-10-05T03:45:35+00:00",
+      "date_field": "web_date_utc"
     },
     {
       "path": "data/raw/app_store/inter/reviews_web.parquet",
