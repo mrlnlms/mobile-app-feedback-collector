@@ -72,6 +72,11 @@ def offset_from_url(url):
     return int(values[0])
 
 
+def url_at_offset(app_id, storefront, offset):
+    return next_url(f"/v1/catalog/{storefront}/apps/{app_id}/reviews?l=pt-BR&offset={offset}",
+                    app_id, storefront)
+
+
 def extract_reviews(payload):
     if not isinstance(payload, dict) or not isinstance(payload.get("data"), list):
         raise ValueError("Resposta Web sem lista data")
@@ -98,17 +103,27 @@ def extract_reviews(payload):
     return result
 
 
-def inspect_page(payload, offset, seen_ids, previous_oldest, app_id, storefront, cutoff):
+def inspect_page(payload, offset, seen_ids, previous_oldest, app_id, storefront, cutoff,
+                 previous_ids=(), accept_overlap=True):
     reviews = extract_reviews(payload)
     ids = [row["id_review"] for row in reviews]
     dates = [parse_utc(row["web_date_raw"]) for row in reviews]
     duplicates = sorted({review_id for review_id in ids if review_id in seen_ids or ids.count(review_id) > 1})
+    overlap_count = 0
+    if accept_overlap and duplicates and len(ids) == len(set(ids)) and previous_ids and previous_oldest:
+        for count in range(min(len(ids) - 1, len(previous_ids)), 0, -1):
+            if (ids[:count] == list(previous_ids)[-count:]
+                    and set(duplicates) == set(ids[:count])
+                    and not any(review_id in seen_ids for review_id in ids[count:])
+                    and dates[count - 1] == parse_utc(previous_oldest)):
+                overlap_count = count
+                break
     anomalies = []
-    if duplicates:
+    if duplicates and not overlap_count:
         anomalies.append("duplicate_ids")
     if any(a < b for a, b in zip(dates, dates[1:])):
         anomalies.append("date_increase_within_page")
-    if dates and previous_oldest and dates[0] > parse_utc(previous_oldest):
+    if dates and previous_oldest and dates[overlap_count] > parse_utc(previous_oldest):
         anomalies.append("date_increase_across_pages")
     next_raw = payload.get("next")
     following = next_url(next_raw, app_id, storefront) if next_raw else None
@@ -126,7 +141,62 @@ def inspect_page(payload, offset, seen_ids, previous_oldest, app_id, storefront,
         "duplicate_ids": duplicates, "next_present": bool(next_raw), "next_raw": next_raw,
         "next_url": following, "next_offset": next_offset,
         "before_cutoff": any(d.date() < cutoff for d in dates) if cutoff else False,
-        "anomalies": anomalies, "ids": ids,
+        "anomalies": anomalies, "ids": ids, "overlap_ids": ids[:overlap_count],
+    }
+
+
+def inspect_recovery_page(payload, offset, app_id, storefront, archived_rows,
+                          archived_positions, terminal_id, terminal_oldest,
+                          previous_oldest, recovery_seen, last_archived_position,
+                          tail_seen, new_started):
+    """Verify a direct-offset walk across an apparent source end."""
+    reviews = extract_reviews(payload)
+    if len(reviews) != 10:
+        raise ValueError("Página de recuperação deve conter dez reviews")
+    ids = [row["id_review"] for row in reviews]
+    if len(set(ids)) != len(ids) or set(ids) & recovery_seen:
+        raise ValueError("ID repetido dentro da travessia de recuperação")
+    dates = [parse_utc(row["web_date_raw"]) for row in reviews]
+    if any(left < right for left, right in zip(dates, dates[1:])):
+        raise ValueError("Datas crescentes na página de recuperação")
+    if previous_oldest and dates[0] > parse_utc(previous_oldest):
+        raise ValueError("Datas crescentes entre páginas de recuperação")
+    following = next_url(payload.get("next"), app_id, storefront) if payload.get("next") else None
+    if not following or offset_from_url(following) != offset + len(reviews):
+        raise ValueError("Recuperação sem próximo offset sequencial")
+    existing = []
+    novel = []
+    for row, review_date in zip(reviews, dates):
+        review_id = row["id_review"]
+        if review_id in archived_positions:
+            if new_started:
+                raise ValueError("ID arquivado voltou depois de IDs novos")
+            position = archived_positions[review_id]
+            if position <= last_archived_position:
+                raise ValueError("Posições arquivadas retrocederam na recuperação")
+            if row != archived_rows[review_id]:
+                raise ValueError(f"Campos do review arquivado divergem: {review_id}")
+            existing.append(review_id)
+            last_archived_position = position
+            if review_id == terminal_id:
+                tail_seen = True
+        else:
+            if not tail_seen:
+                raise ValueError("Recuperação chegou a IDs novos antes do último ID arquivado")
+            if review_date >= parse_utc(terminal_oldest):
+                raise ValueError("ID novo não é mais antigo que a extremidade arquivada")
+            novel.append(review_id)
+            new_started = True
+    return {
+        "offset": offset, "review_count": len(ids), "first_id": ids[0],
+        "last_id": ids[-1], "date_newest": dates[0].isoformat(),
+        "date_oldest": dates[-1].isoformat(), "duplicate_ids": existing,
+        "next_present": True, "next_raw": payload["next"],
+        "next_url": following, "next_offset": offset_from_url(following),
+        "anomalies": [], "ids": ids, "overlap_ids": [],
+        "recovery_existing_ids": existing, "recovery_new_ids": novel,
+        "last_archived_position": last_archived_position,
+        "tail_seen": tail_seen, "new_started": new_started,
     }
 
 
@@ -140,28 +210,106 @@ def replay_run(run, app_id, storefront, cutoff=None):
     seen = set()
     expected = first_url(app_id, storefront)
     previous_oldest = None
+    previous_ids = []
     last_offset = None
     confirmed = []
+    historical_rows = {}
+    historical_positions = {}
+    recovery_active = False
+    recovery_seen = set()
+    recovery_previous_oldest = None
+    recovery_last_position = -1
+    recovery_tail_seen = False
+    recovery_new_started = False
     for entry in entries:
         if entry.get("body_file"):
             body = run / entry["body_file"]
             if not body.is_file() or sha256(body) != entry.get("body_sha256"):
                 raise ValueError(f"Payload bruto ausente ou hash divergente: {body}")
         if entry.get("http_status") != 200:
+            if entry.get("recovery_attempt") and (not recovery_active or entry.get("url") != expected
+                                                   or entry.get("offset") != offset_from_url(expected)):
+                raise ValueError("Tentativa de recuperação fora da sequência")
             continue
+        if entry.get("recovery_page"):
+            if not recovery_active:
+                if expected is not None or not confirmed or not previous_ids or not previous_oldest:
+                    raise ValueError("Recuperação requer página terminal sem next")
+                expected = url_at_offset(app_id, storefront, last_offset + len(previous_ids))
+                bridge_rows = historical_rows.copy()
+                bridge_positions = historical_positions.copy()
+                terminal_id = previous_ids[-1]
+                terminal_oldest = previous_oldest
+                recovery_active = True
+                recovery_seen = set()
+                recovery_previous_oldest = None
+                recovery_last_position = -1
+                recovery_tail_seen = False
+                recovery_new_started = False
+            if entry.get("url") != expected or entry.get("offset") != offset_from_url(expected):
+                raise ValueError(f"Sequência de recuperação inconsistente no offset {entry.get('offset')}")
+            payload = json.loads((run / entry["body_file"]).read_bytes())
+            check = inspect_recovery_page(
+                payload, entry["offset"], app_id, storefront, bridge_rows,
+                bridge_positions, terminal_id, terminal_oldest,
+                recovery_previous_oldest, recovery_seen, recovery_last_position,
+                recovery_tail_seen, recovery_new_started)
+            if (entry.get("ids") != check["ids"]
+                    or entry.get("review_count") != check["review_count"]
+                    or entry.get("recovery_existing_ids") != check["recovery_existing_ids"]
+                    or entry.get("recovery_new_ids") != check["recovery_new_ids"]
+                    or entry.get("next_url") != check["next_url"]):
+                raise ValueError(f"Página de recuperação divergente no offset {entry['offset']}")
+            recovery_seen.update(check["ids"])
+            recovery_previous_oldest = check["date_oldest"]
+            recovery_last_position = check["last_archived_position"]
+            recovery_tail_seen = check["tail_seen"]
+            recovery_new_started = check["new_started"]
+            confirmed.append(entry)
+            for row in extract_reviews(payload):
+                review_id = row["id_review"]
+                if review_id not in historical_rows:
+                    historical_positions[review_id] = len(historical_positions)
+                    historical_rows[review_id] = row
+            seen.update(check["ids"])
+            previous_oldest = check["date_oldest"]
+            previous_ids = check["ids"]
+            expected = check["next_url"]
+            last_offset = entry["offset"]
+            continue
+        if recovery_active:
+            if not recovery_tail_seen or not recovery_new_started:
+                raise ValueError("Recuperação não atravessou o último ID arquivado")
+            recovery_active = False
         if entry.get("url") != expected or offset_from_url(expected) != entry.get("offset"):
             raise ValueError(f"Sequência Web inconsistente no offset {entry.get('offset')}")
         payload = json.loads((run / entry["body_file"]).read_bytes())
-        check = inspect_page(payload, entry["offset"], seen, previous_oldest, app_id, storefront, cutoff)
-        if check["anomalies"] or check["ids"] != entry.get("ids") or check["review_count"] != entry.get("review_count"):
+        recorded_anomalies = entry.get("anomalies") or []
+        check = inspect_page(payload, entry["offset"], seen, previous_oldest, app_id,
+                             storefront, cutoff, previous_ids,
+                             accept_overlap=not recorded_anomalies)
+        if (check["anomalies"] != recorded_anomalies
+                or check["ids"] != entry.get("ids")
+                or check["review_count"] != entry.get("review_count")
+                or check["overlap_ids"] != entry.get("overlap_ids", [])):
             raise ValueError(f"Página Web inconsistente no offset {entry['offset']}")
+        if recorded_anomalies:
+            continue
         if not check["ids"]:
             raise ValueError("Página Web 200 vazia não pode ser materializada sem revisão")
         confirmed.append(entry)
+        for row in extract_reviews(payload):
+            review_id = row["id_review"]
+            if review_id not in historical_rows:
+                historical_positions[review_id] = len(historical_positions)
+                historical_rows[review_id] = row
         seen.update(check["ids"])
         previous_oldest = check["date_oldest"]
+        previous_ids = check["ids"]
         expected = check["next_url"]
         last_offset = entry["offset"]
+    if recovery_active and (not recovery_tail_seen or not recovery_new_started):
+        raise ValueError("Recuperação não atravessou o último ID arquivado")
     summary_file = run / "summary.json"
     if summary_file.is_file():
         summary = json.loads(summary_file.read_text(encoding="utf-8"))
@@ -171,7 +319,7 @@ def replay_run(run, app_id, storefront, cutoff=None):
             raise ValueError("Resumo Web diverge do journal verificado")
     return {"entries": entries, "confirmed": confirmed, "ids": seen,
             "next_url": expected, "last_offset": last_offset,
-            "previous_oldest": previous_oldest}
+            "previous_oldest": previous_oldest, "previous_ids": previous_ids}
 
 
 def append_journal(path, entry):
@@ -196,10 +344,168 @@ def retry_after_seconds(value):
         return None
 
 
+def is_review_resource_404(body):
+    """Identify Apple's observed transient missing-reviews response."""
+    try:
+        payload = json.loads(body)
+    except (TypeError, ValueError, UnicodeDecodeError):
+        return False
+    errors = payload.get("errors") if isinstance(payload, dict) else None
+    return isinstance(errors, list) and any(
+        isinstance(error, dict) and error.get("status") == "404"
+        and error.get("code") == "40403"
+        and "reviews" in str(error.get("detail", "")).lower()
+        for error in errors)
+
+
+def archive_web_staging(staging, archive_parent):
+    """Copy a validated local run to the archive, checking every file hash."""
+    archive_parent.mkdir(parents=True, exist_ok=True)
+    destination = archive_parent / staging.name
+    temporary = archive_parent / ("." + staging.name + ".tmp")
+    if destination.exists() or temporary.exists():
+        raise FileExistsError(destination)
+    shutil.copytree(staging, temporary)
+    for source in staging.rglob("*"):
+        if source.is_file() and sha256(source) != sha256(temporary / source.relative_to(staging)):
+            raise RuntimeError(f"Hash divergente na cópia Web: {source}")
+    os.replace(temporary, destination)
+    shutil.rmtree(staging)
+    return destination
+
+
+def recover_source_end(bank, app_id, storefront, cutoff, source_run, checkpoint_path):
+    """Import a verified direct-offset probe as a partial, resumable Web run."""
+    source_run = Path(source_run)
+    checkpoint_path = Path(checkpoint_path)
+    checkpoint = json.loads(checkpoint_path.read_text(encoding="utf-8"))
+    if (checkpoint.get("kind") != "app_store_web_source_end_recovery_probe"
+            or checkpoint.get("version") != 1
+            or checkpoint.get("bank") != bank
+            or str(checkpoint.get("app_id")) != str(app_id)
+            or checkpoint.get("storefront") != storefront):
+        raise ValueError("Checkpoint de recuperação pertence a outro banco ou formato")
+    if Path(checkpoint["source_run"]).resolve() != source_run.resolve():
+        raise ValueError("Checkpoint aponta para outro source run")
+    if sha256(source_run / "pages.jsonl") != checkpoint.get("source_journal_sha256"):
+        raise ValueError("Hash divergente do source run")
+    canonical = RAW_ROOT / bank / "reviews_web.parquet"
+    assert_available(canonical)
+    if (Path(checkpoint["canonical_web_parquet"]).resolve() != canonical.resolve()
+            or not canonical.is_file()
+            or sha256(canonical) != checkpoint.get("canonical_web_sha256")):
+        raise ValueError("Base Web canônica diverge do checkpoint")
+    prior = replay_run(source_run, app_id, storefront, cutoff)
+    source_summary = json.loads((source_run / "summary.json").read_text(encoding="utf-8"))
+    if (source_summary.get("stop_reason") != "source_end" or prior["next_url"] is not None
+            or not prior["confirmed"] or prior["last_offset"] != checkpoint.get("source_last_offset")):
+        raise ValueError("Source run não terminou no source_end esperado")
+    if cutoff and parse_utc(prior["previous_oldest"]).date() < cutoff:
+        raise ValueError("Source run já atravessou o corte")
+    pages = checkpoint.get("probe_pages")
+    rate_limits = checkpoint.get("rate_limit_responses")
+    if not isinstance(pages, list) or not pages or not isinstance(rate_limits, list):
+        raise ValueError("Checkpoint sem páginas ou respostas de rate limit")
+    expected_offsets = list(range(prior["last_offset"] + len(prior["previous_ids"]),
+                                  checkpoint["last_probe_offset"] + 1, 10))
+    if ([record.get("offset") for record in pages] != expected_offsets
+            or checkpoint.get("direct_probe_first_offset") != expected_offsets[0]
+            or checkpoint.get("next_offset") != expected_offsets[-1] + 10):
+        raise ValueError("Offsets do checkpoint não formam sequência contínua")
+    attempts = []
+    for record, expected_status in ([(record, 200) for record in pages]
+                                    + [(record, 429) for record in rate_limits]):
+        folder = Path(record["probe_dir"])
+        metadata = json.loads((folder / "probe.json").read_text(encoding="utf-8"))
+        body = folder / metadata.get("body_file", "response.body")
+        if (metadata.get("http_status") != expected_status
+                or sha256(body) != metadata.get("body_sha256")
+                or metadata.get("body_sha256") != record.get("body_sha256")):
+            raise ValueError(f"Payload do probe com hash divergente: {folder}")
+        offset = offset_from_url(metadata["url"])
+        if (metadata["url"] != url_at_offset(app_id, storefront, offset)
+                or (expected_status == 200 and (record.get("offset") != offset
+                                                  or Path(record["body_file"]).resolve() != body.resolve()))):
+            raise ValueError(f"URL ou corpo do probe divergente: {folder}")
+        attempts.append((parse_utc(metadata["requested_at"]), metadata, body, expected_status))
+    attempts.sort(key=lambda item: item[0])
+    archive_parent = RUNS_ROOT / bank
+    assert_available(archive_parent)
+    assert_local((STAGING_ROOT,), archive_parent)
+    name = f"{bank}_recent_recovered_{datetime.now(timezone.utc):%Y%m%dT%H%M%S_%fZ}_{uuid.uuid4().hex[:6]}"
+    staging = STAGING_ROOT / bank / name
+    shutil.copytree(source_run, staging)
+    (staging / "summary.json").unlink()
+    copied_checkpoint = staging / "recovery_checkpoint.json"
+    shutil.copy2(checkpoint_path, copied_checkpoint)
+    if sha256(copied_checkpoint) != sha256(checkpoint_path):
+        raise RuntimeError("Hash divergente na cópia do checkpoint")
+    journal = staging / "pages.jsonl"
+    attempted = len(prior["entries"])
+    original_ids = set(prior["ids"])
+    imported_new_ids = []
+    for _, metadata, body, status in attempts:
+        attempted += 1
+        offset = offset_from_url(metadata["url"])
+        suffix = ".json" if status == 200 else ".body"
+        target = staging / "pages" / f"{attempted:04d}_{uuid.uuid4().hex[:8]}{suffix}"
+        shutil.copy2(body, target)
+        if sha256(target) != metadata["body_sha256"]:
+            raise RuntimeError(f"Hash divergente na cópia do probe: {body}")
+        entry = {"page": attempted, "offset": offset, "url": metadata["url"],
+                 "requested_at": metadata["requested_at"],
+                 "received_at": metadata.get("received_at"),
+                 "http_status": status, "content_type": metadata.get("content_type"),
+                 "body_file": str(target.relative_to(staging)),
+                 "body_sha256": metadata["body_sha256"], "body_bytes": target.stat().st_size,
+                 "recovery_probe_dir": str(body.parent)}
+        if status == 200:
+            payload = json.loads(target.read_bytes())
+            reviews = extract_reviews(payload)
+            ids = [row["id_review"] for row in reviews]
+            existing = [review_id for review_id in ids if review_id in original_ids]
+            novel = [review_id for review_id in ids if review_id not in original_ids]
+            imported_new_ids.extend(novel)
+            following = next_url(payload.get("next"), app_id, storefront) if payload.get("next") else None
+            entry.update({"recovery_page": True, "review_count": len(ids), "ids": ids,
+                          "first_id": ids[0] if ids else None, "last_id": ids[-1] if ids else None,
+                          "recovery_existing_ids": existing, "recovery_new_ids": novel,
+                          "next_url": following, "next_offset": offset_from_url(following) if following else None})
+        else:
+            entry["recovery_attempt"] = True
+        append_journal(journal, entry)
+    state = replay_run(staging, app_id, storefront, cutoff)
+    if (state["last_offset"] != checkpoint["last_probe_offset"]
+            or state["next_url"] != checkpoint.get("next_url")
+            or len(state["confirmed"]) != len(prior["confirmed"]) + len(pages)
+            or imported_new_ids != checkpoint.get("new_review_ids")
+            or set(state["ids"]) - original_ids != set(imported_new_ids)):
+        raise ValueError("Run recuperado diverge do checkpoint")
+    save_json(staging / "progress.json", {
+        "updated_at": utc_now(), "last_confirmed_offset": state["last_offset"],
+        "next_url": state["next_url"], "next_offset": offset_from_url(state["next_url"]),
+        "unique_ids": len(state["ids"])})
+    save_json(staging / "summary.json", {
+        "app_id": str(app_id), "storefront": storefront, "sort": "recent", "bank": bank,
+        "started_at": utc_now(), "finished_at": utc_now(), "resume_source": str(source_run),
+        "recovery_checkpoint": str(checkpoint_path),
+        "recovery_checkpoint_sha256": sha256(copied_checkpoint),
+        "pages_attempted": len(state["entries"]), "pages_http_200": len(state["confirmed"]),
+        "recovery_imported_429": len(rate_limits),
+        "recovery_imported_new_ids": len(imported_new_ids),
+        "last_confirmed_offset": state["last_offset"],
+        "next_offset": offset_from_url(state["next_url"]), "unique_ids": len(state["ids"]),
+        "stop_reason": "page_limit", "cutoff": cutoff.isoformat() if cutoff else None})
+    replay_run(staging, app_id, storefront, cutoff)
+    if sha256(canonical) != checkpoint["canonical_web_sha256"]:
+        raise RuntimeError("Base Web canônica mudou durante a recuperação")
+    return archive_web_staging(staging, archive_parent)
+
+
 def collect_web(bank, app_id, storefront, cutoff=None, delay_seconds=15.0,
-                max_pages=1000, max_429_retries=3, resume_from=None):
+                max_pages=1000, max_429_retries=3, resume_from=None, max_404_retries=3):
     """Fetch sequential pages, retaining raw bodies and a resumable confirmed journal."""
-    if delay_seconds < 4 or max_pages < 1 or max_429_retries < 0:
+    if delay_seconds < 4 or max_pages < 1 or max_429_retries < 0 or max_404_retries < 0:
         raise ValueError("Pausa mínima de 4 segundos e limites não negativos")
     if cutoff is not None and not isinstance(cutoff, date):
         raise ValueError("cutoff deve ser date ou None")
@@ -216,19 +522,23 @@ def collect_web(bank, app_id, storefront, cutoff=None, delay_seconds=15.0,
             staging = Path(resume_from)
         else:
             shutil.copytree(resume_from, staging)
+        (staging / "summary.json").unlink(missing_ok=True)
     else:
         (staging / "pages").mkdir(parents=True, exist_ok=False)
         prior = {"entries": [], "confirmed": [], "ids": set(), "next_url": first_url(app_id, storefront),
-                 "last_offset": None, "previous_oldest": None}
+                 "last_offset": None, "previous_oldest": None, "previous_ids": []}
     journal = staging / "pages.jsonl"
     current = prior["next_url"]
     seen = set(prior["ids"])
     previous_oldest = prior["previous_oldest"]
+    previous_ids = prior["previous_ids"]
     confirmed_offsets = {entry["offset"] for entry in prior["confirmed"]}
     attempted = len(prior["entries"])
     confirmed_count = len(prior["confirmed"])
     rate_limits = 0
     retry_streak = 0
+    review_404_attempts = 0
+    not_found_streak = 0
     new_pages = 0
     stop_reason = "page_limit"
     started_at = utc_now()
@@ -276,6 +586,16 @@ def collect_web(bank, app_id, storefront, cutoff=None, delay_seconds=15.0,
             entry.update({"backoff_source": "retry_after" if header_wait is not None else "exponential",
                           "suggested_backoff_seconds": wait, "will_retry": retry_streak <= max_429_retries,
                           "backoff_seconds": wait if retry_streak <= max_429_retries else 0.0})
+        if entry.get("http_status") == 404 and confirmed_count and is_review_resource_404(body):
+            review_404_attempts += 1
+            not_found_streak += 1
+            wait = max(delay_seconds, min(60 * 2 ** (not_found_streak - 1), 600))
+            entry.update({"review_resource_404": True,
+                          "review_404_retry_number": not_found_streak,
+                          "backoff_source": "review_404_exponential",
+                          "suggested_backoff_seconds": wait,
+                          "will_retry": not_found_streak <= max_404_retries,
+                          "backoff_seconds": wait if not_found_streak <= max_404_retries else 0.0})
         if entry.get("http_status") != 200 or stop_reason == "request_error":
             append_journal(journal, entry)
             save_json(staging / "progress.json", {"updated_at": utc_now(), "last_confirmed_offset": max(confirmed_offsets, default=None),
@@ -283,11 +603,15 @@ def collect_web(bank, app_id, storefront, cutoff=None, delay_seconds=15.0,
             if entry.get("http_status") == 429 and entry["will_retry"]:
                 time.sleep(entry["backoff_seconds"])
                 continue
+            if entry.get("review_resource_404") and entry["will_retry"]:
+                time.sleep(entry["backoff_seconds"])
+                continue
             stop_reason = "rate_limited_paused" if entry.get("http_status") == 429 else f"http_{entry.get('http_status')}" if entry.get("http_status") else "request_error"
             break
         try:
             payload = json.loads(body)
-            check = inspect_page(payload, offset, seen, previous_oldest, app_id, storefront, cutoff)
+            check = inspect_page(payload, offset, seen, previous_oldest, app_id, storefront,
+                                 cutoff, previous_ids)
         except (ValueError, TypeError, json.JSONDecodeError) as exc:
             entry.update({"error": str(exc), "anomalies": ["invalid_response"]})
             append_journal(journal, entry)
@@ -303,8 +627,10 @@ def collect_web(bank, app_id, storefront, cutoff=None, delay_seconds=15.0,
         confirmed_offsets.add(offset)
         seen.update(check["ids"])
         previous_oldest = check["date_oldest"]
+        previous_ids = check["ids"]
         current = check["next_url"]
         retry_streak = 0
+        not_found_streak = 0
         save_json(staging / "progress.json", {"updated_at": utc_now(), "last_confirmed_offset": offset,
                                               "next_url": current, "next_offset": offset_from_url(current) if current else None,
                                               "unique_ids": len(seen)})
@@ -320,22 +646,12 @@ def collect_web(bank, app_id, storefront, cutoff=None, delay_seconds=15.0,
                "started_at": started_at, "finished_at": utc_now(), "resume_source": str(resume_from) if resume_from else None,
                "delay_seconds": delay_seconds, "pages_attempted": attempted, "pages_http_200": confirmed_count,
                "rate_limit_attempts_this_run": rate_limits, "last_confirmed_offset": max(confirmed_offsets, default=None),
+               "review_404_attempts_this_run": review_404_attempts,
                "next_offset": offset_from_url(current) if current else None, "unique_ids": len(seen),
                "stop_reason": stop_reason, "cutoff": cutoff.isoformat() if cutoff else None}
     save_json(staging / "summary.json", summary)
     replay_run(staging, app_id, storefront, cutoff)
-    archive_parent.mkdir(parents=True, exist_ok=True)
-    destination = archive_parent / staging.name
-    temporary = archive_parent / ("." + staging.name + ".tmp")
-    if destination.exists() or temporary.exists():
-        raise FileExistsError(destination)
-    shutil.copytree(staging, temporary)
-    for source in staging.rglob("*"):
-        if source.is_file() and sha256(source) != sha256(temporary / source.relative_to(staging)):
-            raise RuntimeError(f"Hash divergente na cópia Web: {source}")
-    os.replace(temporary, destination)
-    shutil.rmtree(staging)
-    return destination
+    return archive_web_staging(staging, archive_parent)
 
 
 def build_web_frame(run, app_id, storefront):
@@ -351,10 +667,11 @@ def build_web_frame(run, app_id, storefront):
                          "web_requested_at": entry["requested_at"], "web_run": str(run),
                          "web_body_file": entry["body_file"], "web_body_sha256": entry["body_sha256"]})
     frame = pd.DataFrame(rows)
+    frame = frame.drop_duplicates("id_review", keep="first").reset_index(drop=True)
     if len(frame) != len(state["ids"]) or frame.id_review.duplicated().any():
         raise ValueError("IDs Web duplicados ou divergentes do journal")
-    frame["web_date_utc"] = pd.to_datetime(frame["web_date_utc"], utc=True)
-    frame["web_requested_at"] = pd.to_datetime(frame["web_requested_at"], utc=True)
+    frame["web_date_utc"] = pd.to_datetime(frame["web_date_utc"], utc=True, format="ISO8601")
+    frame["web_requested_at"] = pd.to_datetime(frame["web_requested_at"], utc=True, format="ISO8601")
     if not frame.web_nota.isin([1, 2, 3, 4, 5]).all():
         raise ValueError("Notas Web inválidas")
     return frame
@@ -458,10 +775,12 @@ def main():
     action = parser.add_mutually_exclusive_group(required=True)
     action.add_argument("--collect", action="store_true")
     action.add_argument("--from-run", type=Path)
+    action.add_argument("--recover-source-end", type=Path, metavar="CHECKPOINT")
     parser.add_argument("--resume-from", type=Path)
     parser.add_argument("--delay-seconds", type=float, default=15.0)
     parser.add_argument("--max-pages", type=int, default=1000)
     parser.add_argument("--max-429-retries", type=int, default=3)
+    parser.add_argument("--max-404-retries", type=int, default=3)
     parser.add_argument("--config", default="config.yaml")
     args = parser.parse_args()
     config = yaml.safe_load(Path(args.config).read_text(encoding="utf-8"))
@@ -475,8 +794,17 @@ def main():
         print(json.dumps(materialize_web(args.bank, app_id, storefront, args.from_run), indent=2, ensure_ascii=False))
         return
     cutoff = date.fromisoformat(config["banks"][args.bank]["start_date"])
+    if args.recover_source_end:
+        if not args.resume_from:
+            parser.error("--recover-source-end requer --resume-from SOURCE_RUN")
+        run = recover_source_end(args.bank, app_id, storefront, cutoff,
+                                 args.resume_from, args.recover_source_end)
+        print(run)
+        print((run / "summary.json").read_text(encoding="utf-8"))
+        return
     run = collect_web(args.bank, app_id, storefront, cutoff, args.delay_seconds,
-                      args.max_pages, args.max_429_retries, args.resume_from)
+                      args.max_pages, args.max_429_retries, args.resume_from,
+                      args.max_404_retries)
     print(run)
     summary = json.loads((run / "summary.json").read_text(encoding="utf-8"))
     print(json.dumps(summary, indent=2, ensure_ascii=False))
