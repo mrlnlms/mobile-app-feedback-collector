@@ -228,9 +228,20 @@ def replay_run(run, app_id, storefront, cutoff=None):
             if not body.is_file() or sha256(body) != entry.get("body_sha256"):
                 raise ValueError(f"Payload bruto ausente ou hash divergente: {body}")
         if entry.get("http_status") != 200:
-            if entry.get("recovery_attempt") and (not recovery_active or entry.get("url") != expected
-                                                   or entry.get("offset") != offset_from_url(expected)):
-                raise ValueError("Tentativa de recuperação fora da sequência")
+            if entry.get("recovery_attempt"):
+                recovery_expected = expected
+                if not recovery_active:
+                    if not confirmed or not previous_ids:
+                        raise ValueError("Tentativa de recuperação sem página anterior confirmada")
+                    if recovery_expected is None:
+                        recovery_expected = url_at_offset(
+                            app_id, storefront, last_offset + len(previous_ids))
+                    elif pending_anomaly_offset != offset_from_url(recovery_expected):
+                        raise ValueError("Tentativa de recuperação sem anomalia pendente")
+                if (entry.get("http_status") != 429
+                        or entry.get("url") != recovery_expected
+                        or entry.get("offset") != offset_from_url(recovery_expected)):
+                    raise ValueError("Tentativa de recuperação fora da sequência")
             continue
         if entry.get("recovery_page"):
             if not recovery_active:

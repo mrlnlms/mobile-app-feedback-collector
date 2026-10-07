@@ -39,7 +39,8 @@ def timeline_page(ids, next_offset=None):
         if next_offset is not None else None)}
 
 
-def recovery_fixture(root, source, missing_tail=False, changed_review=False):
+def recovery_fixture(root, source, missing_tail=False, changed_review=False,
+                     initial_rate_limit=False):
     """Preserve a synthetic probe over an apparent source end."""
     probe_root = root / "probes"
     probe_root.mkdir()
@@ -51,9 +52,12 @@ def recovery_fixture(root, source, missing_tail=False, changed_review=False):
         page20["data"][0]["attributes"]["review"] = "changed review"
     pages = []
     rate_limits = []
-    for sequence, (offset, status, payload) in enumerate([
+    responses = [
         (20, 200, page20), (30, 429, None), (30, 200, page30), (40, 200, page40),
-    ]):
+    ]
+    if initial_rate_limit:
+        responses.insert(0, (20, 429, None))
+    for sequence, (offset, status, payload) in enumerate(responses):
         folder = probe_root / f"page_{sequence}"
         folder.mkdir()
         body = json.dumps(payload).encode() if status == 200 else b"limited"
@@ -243,6 +247,48 @@ class WebCollectorTests(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError, "anomalia"):
                         recover_continuity("test", "123", "br", date(2025, 1, 1),
                                            source, checkpoint)
+
+    def test_recover_continuity_accepts_rate_limit_before_first_recovery_page(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            with patch("scripts.collect.app_store_web.RUNS_ROOT", root / "runs"), \
+                 patch("scripts.collect.app_store_web.STAGING_ROOT", root / "staging"), \
+                 patch("scripts.collect.app_store_web.RAW_ROOT", root / "raw"):
+                source = self.make_source_continuity_pause(root)
+                checkpoint = recovery_fixture(root, source, initial_rate_limit=True)
+                data = json.loads(checkpoint.read_text())
+                data["kind"] = "app_store_web_continuity_recovery_probe"
+                checkpoint.write_text(json.dumps(data))
+                with patch("scripts.collect.app_store_web.urlopen",
+                           side_effect=AssertionError("No HTTP during import")):
+                    recovered = recover_continuity("test", "123", "br", date(2025, 1, 1),
+                                                   source, checkpoint)
+                state = replay_run(recovered, "123", "br", date(2025, 1, 1))
+                self.assertEqual([entry["http_status"] for entry in state["entries"][3:6]],
+                                 [429, 200, 429])
+                self.assertEqual(len(state["ids"]), 35)
+                self.assertEqual(json.loads((recovered / "summary.json").read_text())
+                                 ["recovery_imported_429"], 2)
+
+    def test_recover_continuity_rejects_initial_rate_limit_at_wrong_offset(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            with patch("scripts.collect.app_store_web.RUNS_ROOT", root / "runs"), \
+                 patch("scripts.collect.app_store_web.STAGING_ROOT", root / "staging"), \
+                 patch("scripts.collect.app_store_web.RAW_ROOT", root / "raw"):
+                source = self.make_source_continuity_pause(root)
+                checkpoint = recovery_fixture(root, source, initial_rate_limit=True)
+                data = json.loads(checkpoint.read_text())
+                data["kind"] = "app_store_web_continuity_recovery_probe"
+                checkpoint.write_text(json.dumps(data))
+                first_attempt = root / "probes/page_0/probe.json"
+                metadata = json.loads(first_attempt.read_text())
+                metadata["url"] = next_url(
+                    "/v1/catalog/br/apps/123/reviews?l=pt-BR&offset=30", "123", "br")
+                first_attempt.write_text(json.dumps(metadata))
+                with self.assertRaisesRegex(ValueError, "fora da sequência"):
+                    recover_continuity("test", "123", "br", date(2025, 1, 1),
+                                       source, checkpoint)
 
     def test_recover_source_end_imports_probe_and_resumes_at_next_offset(self):
         with TemporaryDirectory() as directory:
