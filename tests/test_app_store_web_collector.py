@@ -10,7 +10,8 @@ from unittest.mock import call, patch
 from urllib.error import HTTPError
 
 from scripts.collect.app_store_web import (build_web_frame, collect_web, first_url,
-                                           materialize_web, next_url, recover_source_end,
+                                           materialize_web, next_url, recover_continuity,
+                                           recover_source_end,
                                            replay_run)
 from scripts.collect.storage import sha256
 
@@ -176,6 +177,72 @@ class WebCollectorTests(unittest.TestCase):
         self.assertEqual(json.loads((source / "summary.json").read_text())["stop_reason"], "source_end")
         materialize_web("test", "123", "br", source)
         return source
+
+    def make_source_continuity_pause(self, root, anomalous=True):
+        pages = [Response(timeline_page(range(10), 10)),
+                 Response(timeline_page(range(10, 20), 20))]
+        if anomalous:
+            pages.append(Response(timeline_page(range(5, 15), 30)))
+        responses = iter(pages)
+        with patch("scripts.collect.app_store_web.urlopen", side_effect=lambda request, timeout: next(responses)), \
+             patch("scripts.collect.app_store_web.time.sleep"):
+            source = collect_web("test", "123", "br", cutoff=date(2025, 1, 1),
+                                 delay_seconds=4, max_pages=len(pages))
+        expected_reason = "continuity_uncertain" if anomalous else "page_limit"
+        self.assertEqual(json.loads((source / "summary.json").read_text())["stop_reason"], expected_reason)
+        canonical = root / "raw/test/reviews_web.parquet"
+        canonical.parent.mkdir(parents=True)
+        canonical.write_bytes(b"unchanged canonical archive")
+        return source
+
+    def test_recover_continuity_imports_repeated_span_and_resumes(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            with patch("scripts.collect.app_store_web.RUNS_ROOT", root / "runs"), \
+                 patch("scripts.collect.app_store_web.STAGING_ROOT", root / "staging"), \
+                 patch("scripts.collect.app_store_web.RAW_ROOT", root / "raw"):
+                source = self.make_source_continuity_pause(root)
+                checkpoint = recovery_fixture(root, source)
+                data = json.loads(checkpoint.read_text())
+                data["kind"] = "app_store_web_continuity_recovery_probe"
+                checkpoint.write_text(json.dumps(data))
+                canonical = root / "raw/test/reviews_web.parquet"
+                before = sha256(canonical)
+                with patch("scripts.collect.app_store_web.urlopen", side_effect=AssertionError("No HTTP during import")):
+                    recovered = recover_continuity("test", "123", "br", date(2025, 1, 1),
+                                                   source, checkpoint)
+                state = replay_run(recovered, "123", "br", date(2025, 1, 1))
+                summary = json.loads((recovered / "summary.json").read_text())
+                self.assertEqual(summary["stop_reason"], "page_limit")
+                self.assertEqual(summary["recovery_mode"], "continuity")
+                self.assertEqual(summary["pages_http_200"], 5)
+                self.assertEqual(summary["unique_ids"], 35)
+                self.assertEqual(summary["next_offset"], 50)
+                self.assertEqual(len(state["entries"]), 7)
+                self.assertEqual(len(build_web_frame(recovered, "123", "br")), 35)
+                self.assertTrue(state["entries"][3]["recovery_after_anomaly"])
+                self.assertEqual(sha256(canonical), before)
+                with patch("scripts.collect.app_store_web.urlopen",
+                           return_value=Response(timeline_page(range(35, 45), 60))):
+                    continued = collect_web("test", "123", "br", cutoff=date(2025, 1, 1),
+                                            delay_seconds=4, max_pages=1, resume_from=recovered)
+                self.assertEqual(len(replay_run(continued, "123", "br")["ids"]), 45)
+
+    def test_recover_continuity_rejects_run_without_pending_anomaly(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            with patch("scripts.collect.app_store_web.RUNS_ROOT", root / "runs"), \
+                 patch("scripts.collect.app_store_web.STAGING_ROOT", root / "staging"), \
+                 patch("scripts.collect.app_store_web.RAW_ROOT", root / "raw"):
+                source = self.make_source_continuity_pause(root, anomalous=False)
+                checkpoint = recovery_fixture(root, source)
+                data = json.loads(checkpoint.read_text())
+                data["kind"] = "app_store_web_continuity_recovery_probe"
+                checkpoint.write_text(json.dumps(data))
+                with patch("scripts.collect.app_store_web.urlopen", side_effect=AssertionError("No HTTP during import")):
+                    with self.assertRaisesRegex(ValueError, "anomalia"):
+                        recover_continuity("test", "123", "br", date(2025, 1, 1),
+                                           source, checkpoint)
 
     def test_recover_source_end_imports_probe_and_resumes_at_next_offset(self):
         with TemporaryDirectory() as directory:

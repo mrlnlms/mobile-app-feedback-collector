@@ -221,6 +221,7 @@ def replay_run(run, app_id, storefront, cutoff=None):
     recovery_last_position = -1
     recovery_tail_seen = False
     recovery_new_started = False
+    pending_anomaly_offset = None
     for entry in entries:
         if entry.get("body_file"):
             body = run / entry["body_file"]
@@ -233,9 +234,15 @@ def replay_run(run, app_id, storefront, cutoff=None):
             continue
         if entry.get("recovery_page"):
             if not recovery_active:
-                if expected is not None or not confirmed or not previous_ids or not previous_oldest:
-                    raise ValueError("Recuperação requer página terminal sem next")
-                expected = url_at_offset(app_id, storefront, last_offset + len(previous_ids))
+                if not confirmed or not previous_ids or not previous_oldest:
+                    raise ValueError("Recuperação requer página anterior confirmada")
+                if expected is None:
+                    if entry.get("recovery_after_anomaly"):
+                        raise ValueError("Recuperação de anomalia requer next pendente")
+                    expected = url_at_offset(app_id, storefront, last_offset + len(previous_ids))
+                elif not (entry.get("recovery_after_anomaly")
+                          and pending_anomaly_offset == entry.get("offset")):
+                    raise ValueError("Recuperação com next requer anomalia no offset pendente")
                 bridge_rows = historical_rows.copy()
                 bridge_positions = historical_positions.copy()
                 terminal_id = previous_ids[-1]
@@ -246,6 +253,7 @@ def replay_run(run, app_id, storefront, cutoff=None):
                 recovery_last_position = -1
                 recovery_tail_seen = False
                 recovery_new_started = False
+                pending_anomaly_offset = None
             if entry.get("url") != expected or entry.get("offset") != offset_from_url(expected):
                 raise ValueError(f"Sequência de recuperação inconsistente no offset {entry.get('offset')}")
             payload = json.loads((run / entry["body_file"]).read_bytes())
@@ -276,6 +284,7 @@ def replay_run(run, app_id, storefront, cutoff=None):
             previous_ids = check["ids"]
             expected = check["next_url"]
             last_offset = entry["offset"]
+            pending_anomaly_offset = None
             continue
         if recovery_active:
             if not recovery_tail_seen or not recovery_new_started:
@@ -294,6 +303,7 @@ def replay_run(run, app_id, storefront, cutoff=None):
                 or check["overlap_ids"] != entry.get("overlap_ids", [])):
             raise ValueError(f"Página Web inconsistente no offset {entry['offset']}")
         if recorded_anomalies:
+            pending_anomaly_offset = entry["offset"]
             continue
         if not check["ids"]:
             raise ValueError("Página Web 200 vazia não pode ser materializada sem revisão")
@@ -308,6 +318,7 @@ def replay_run(run, app_id, storefront, cutoff=None):
         previous_ids = check["ids"]
         expected = check["next_url"]
         last_offset = entry["offset"]
+        pending_anomaly_offset = None
     if recovery_active and (not recovery_tail_seen or not recovery_new_started):
         raise ValueError("Recuperação não atravessou o último ID arquivado")
     summary_file = run / "summary.json"
@@ -374,12 +385,14 @@ def archive_web_staging(staging, archive_parent):
     return destination
 
 
-def recover_source_end(bank, app_id, storefront, cutoff, source_run, checkpoint_path):
-    """Import a verified direct-offset probe as a partial, resumable Web run."""
+def _recover_preserved_pages(bank, app_id, storefront, cutoff, source_run, checkpoint_path, mode):
+    """Import a verified repeated span after source end or a continuity pause."""
     source_run = Path(source_run)
     checkpoint_path = Path(checkpoint_path)
     checkpoint = json.loads(checkpoint_path.read_text(encoding="utf-8"))
-    if (checkpoint.get("kind") != "app_store_web_source_end_recovery_probe"
+    expected_kind = ("app_store_web_source_end_recovery_probe" if mode == "source_end"
+                     else "app_store_web_continuity_recovery_probe")
+    if (checkpoint.get("kind") != expected_kind
             or checkpoint.get("version") != 1
             or checkpoint.get("bank") != bank
             or str(checkpoint.get("app_id")) != str(app_id)
@@ -397,9 +410,19 @@ def recover_source_end(bank, app_id, storefront, cutoff, source_run, checkpoint_
         raise ValueError("Base Web canônica diverge do checkpoint")
     prior = replay_run(source_run, app_id, storefront, cutoff)
     source_summary = json.loads((source_run / "summary.json").read_text(encoding="utf-8"))
-    if (source_summary.get("stop_reason") != "source_end" or prior["next_url"] is not None
-            or not prior["confirmed"] or prior["last_offset"] != checkpoint.get("source_last_offset")):
-        raise ValueError("Source run não terminou no source_end esperado")
+    if not prior["confirmed"] or prior["last_offset"] != checkpoint.get("source_last_offset"):
+        raise ValueError("Source run não terminou no checkpoint esperado")
+    if mode == "source_end":
+        if source_summary.get("stop_reason") != "source_end" or prior["next_url"] is not None:
+            raise ValueError("Source run não terminou no source_end esperado")
+    elif (source_summary.get("stop_reason") != "continuity_uncertain"
+          or prior["next_url"] != url_at_offset(app_id, storefront,
+                                                prior["last_offset"] + len(prior["previous_ids"]))
+          or not prior["entries"]
+          or prior["entries"][-1].get("http_status") != 200
+          or not prior["entries"][-1].get("anomalies")
+          or prior["entries"][-1].get("offset") != offset_from_url(prior["next_url"])):
+        raise ValueError("Source run não terminou em anomalia no offset pendente")
     if cutoff and parse_utc(prior["previous_oldest"]).date() < cutoff:
         raise ValueError("Source run já atravessou o corte")
     pages = checkpoint.get("probe_pages")
@@ -471,6 +494,8 @@ def recover_source_end(bank, app_id, storefront, cutoff, source_run, checkpoint_
                           "first_id": ids[0] if ids else None, "last_id": ids[-1] if ids else None,
                           "recovery_existing_ids": existing, "recovery_new_ids": novel,
                           "next_url": following, "next_offset": offset_from_url(following) if following else None})
+            if mode == "continuity" and offset == expected_offsets[0]:
+                entry["recovery_after_anomaly"] = True
         else:
             entry["recovery_attempt"] = True
         append_journal(journal, entry)
@@ -488,6 +513,7 @@ def recover_source_end(bank, app_id, storefront, cutoff, source_run, checkpoint_
     save_json(staging / "summary.json", {
         "app_id": str(app_id), "storefront": storefront, "sort": "recent", "bank": bank,
         "started_at": utc_now(), "finished_at": utc_now(), "resume_source": str(source_run),
+        "recovery_mode": mode,
         "recovery_checkpoint": str(checkpoint_path),
         "recovery_checkpoint_sha256": sha256(copied_checkpoint),
         "pages_attempted": len(state["entries"]), "pages_http_200": len(state["confirmed"]),
@@ -500,6 +526,18 @@ def recover_source_end(bank, app_id, storefront, cutoff, source_run, checkpoint_
     if sha256(canonical) != checkpoint["canonical_web_sha256"]:
         raise RuntimeError("Base Web canônica mudou durante a recuperação")
     return archive_web_staging(staging, archive_parent)
+
+
+def recover_source_end(bank, app_id, storefront, cutoff, source_run, checkpoint_path):
+    """Import a verified direct-offset probe after a source-end response."""
+    return _recover_preserved_pages(bank, app_id, storefront, cutoff, source_run,
+                                    checkpoint_path, "source_end")
+
+
+def recover_continuity(bank, app_id, storefront, cutoff, source_run, checkpoint_path):
+    """Import a verified repeated span after a continuity pause."""
+    return _recover_preserved_pages(bank, app_id, storefront, cutoff, source_run,
+                                    checkpoint_path, "continuity")
 
 
 def collect_web(bank, app_id, storefront, cutoff=None, delay_seconds=15.0,
@@ -776,6 +814,7 @@ def main():
     action.add_argument("--collect", action="store_true")
     action.add_argument("--from-run", type=Path)
     action.add_argument("--recover-source-end", type=Path, metavar="CHECKPOINT")
+    action.add_argument("--recover-continuity", type=Path, metavar="CHECKPOINT")
     parser.add_argument("--resume-from", type=Path)
     parser.add_argument("--delay-seconds", type=float, default=15.0)
     parser.add_argument("--max-pages", type=int, default=1000)
@@ -799,6 +838,14 @@ def main():
             parser.error("--recover-source-end requer --resume-from SOURCE_RUN")
         run = recover_source_end(args.bank, app_id, storefront, cutoff,
                                  args.resume_from, args.recover_source_end)
+        print(run)
+        print((run / "summary.json").read_text(encoding="utf-8"))
+        return
+    if args.recover_continuity:
+        if not args.resume_from:
+            parser.error("--recover-continuity requer --resume-from SOURCE_RUN")
+        run = recover_continuity(args.bank, app_id, storefront, cutoff,
+                                 args.resume_from, args.recover_continuity)
         print(run)
         print((run / "summary.json").read_text(encoding="utf-8"))
         return
