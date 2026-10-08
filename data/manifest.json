@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-08T10:40:11.464546-03:00",
+  "generated_at": "2026-10-08T19:42:14.096980-03:00",
   "files": [
     {
       "path": "data/raw/google_play/nubank/reviews_raw.parquet",
@@ -699,6 +699,66 @@
       "web_date_utc_max": "2026-10-04T17:13:07+00:00"
     },
     {
+      "path": "data/raw/app_store/c6bank/reviews_web.parquet",
+      "kind": "web",
+      "platform": "app_store",
+      "bank": "c6bank",
+      "size_bytes": 268692,
+      "sha256": "7b006ddecb5d56bb880bd5641b9f9e819e998d8a64c22df4e0e74f4a3b664a60",
+      "reviews": 1410,
+      "oldest_utc": "2024-12-31T17:33:17+00:00",
+      "newest_utc": "2026-10-07T02:06:00+00:00",
+      "date_field": "web_date_utc"
+    },
+    {
+      "path": "data/derived/app_store/c6bank/reviews_reconciled.parquet",
+      "kind": "reconciled",
+      "platform": "app_store",
+      "bank": "c6bank",
+      "size_bytes": 364316,
+      "sha256": "2d6722869833f91a69faa181b75ec684b56cd8dcadb8a7da6b2d6d285fd5cbee",
+      "reviews": 1413,
+      "source_counts": {
+        "web_only": 875,
+        "rss_web": 535,
+        "rss_only": 3
+      },
+      "rss_updated_utc_min": "2025-01-01T11:41:08+00:00",
+      "rss_updated_utc_max": "2026-10-03T18:35:47+00:00",
+      "web_date_utc_min": "2024-12-31T17:33:17+00:00",
+      "web_date_utc_max": "2026-10-07T02:06:00+00:00"
+    },
+    {
+      "path": "data/raw/app_store/picpay/reviews_web.parquet",
+      "kind": "web",
+      "platform": "app_store",
+      "bank": "picpay",
+      "size_bytes": 1287030,
+      "sha256": "35f149fa21609f27e610b3c3bf1a8c1d85a8b82d3a708544d2a8e374ac12775b",
+      "reviews": 13708,
+      "oldest_utc": "2024-12-31T19:25:55+00:00",
+      "newest_utc": "2026-10-07T03:04:14+00:00",
+      "date_field": "web_date_utc"
+    },
+    {
+      "path": "data/derived/app_store/picpay/reviews_reconciled.parquet",
+      "kind": "reconciled",
+      "platform": "app_store",
+      "bank": "picpay",
+      "size_bytes": 1324429,
+      "sha256": "bbad9af4da02fc42514ead440146301ce8fa35740da8621fddd8a3537be3abda",
+      "reviews": 13744,
+      "source_counts": {
+        "web_only": 13196,
+        "rss_web": 512,
+        "rss_only": 36
+      },
+      "rss_updated_utc_min": "2025-01-06T11:44:04+00:00",
+      "rss_updated_utc_max": "2026-10-04T12:48:51+00:00",
+      "web_date_utc_min": "2024-12-31T19:25:55+00:00",
+      "web_date_utc_max": "2026-10-07T03:04:14+00:00"
+    },
+    {
       "path": "data/raw/app_store/caixa/reviews_web.parquet",
       "kind": "web",
       "platform": "app_store",
@@ -737,6 +797,18 @@
       "reviews": 3810,
       "oldest_utc": "2026-09-14T17:24:42+00:00",
       "newest_utc": "2026-10-05T03:45:35+00:00",
+      "date_field": "web_date_utc"
+    },
+    {
+      "path": "data/runs/app_store/snapshots_web/picpay/reviews_web_before_20261008T210647_214000Z.parquet",
+      "kind": "snapshot_web",
+      "platform": "app_store",
+      "bank": "picpay",
+      "size_bytes": 986099,
+      "sha256": "e31d32bf8b63ca7179b1379ced368508e872be1e19e785cc0319ca5e147b3a71",
+      "reviews": 10250,
+      "oldest_utc": "2025-03-21T22:54:00+00:00",
+      "newest_utc": "2026-10-07T03:04:14+00:00",
       "date_field": "web_date_utc"
     },
     {

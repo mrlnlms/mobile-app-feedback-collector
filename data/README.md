@@ -8,7 +8,7 @@
 | `raw/app_store/<banco>/` | RSS `reviews_raw.parquet`; Web `reviews_web.parquet` quando já validada para o banco. |
 | `derived/google_play/` | Resultados por banco, primeira rodada e comparação antes/depois. |
 | `derived/app_store/current/` | Comparação preservada da atualização RSS de 05/10/2026. |
-| `derived/app_store/<banco>/reviews_reconciled.parquet` | União RSS + Web por ID, com proveniência e timestamps separados; publicada para Inter, Nubank, Caixa, Itaú, Banco do Brasil, Bradesco e Santander. |
+| `derived/app_store/<banco>/reviews_reconciled.parquet` | União RSS + Web por ID, com proveniência e timestamps separados; publicada para Inter, Nubank, Caixa, Itaú, Banco do Brasil, Bradesco, Santander, C6 Bank e PicPay. |
 | `derived/pix_voz/` | Consultas lexicais: auditoria inicial e resultados recalculados em 27/09/2026. |
 | `derived/poc/` | CSVs da PoC original. |
 | `runs/google_play/` | Relatórios, estado por banco, snapshots e checkpoints históricos. |
