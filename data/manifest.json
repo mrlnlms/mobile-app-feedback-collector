@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-07T21:18:00.009984-03:00",
+  "generated_at": "2026-10-08T10:40:11.464546-03:00",
   "files": [
     {
       "path": "data/raw/google_play/nubank/reviews_raw.parquet",
@@ -607,6 +607,66 @@
       "rss_updated_utc_max": "2026-10-04T13:33:52+00:00",
       "web_date_utc_min": "2024-12-31T18:24:33+00:00",
       "web_date_utc_max": "2026-10-05T03:45:35+00:00"
+    },
+    {
+      "path": "data/raw/app_store/bradesco/reviews_web.parquet",
+      "kind": "web",
+      "platform": "app_store",
+      "bank": "bradesco",
+      "size_bytes": 420283,
+      "sha256": "3aa28500d0a2f30ea274ae3c6e2093f2a1bcb242c5d0bbf1104370956ca65fe9",
+      "reviews": 3010,
+      "oldest_utc": "2024-12-31T13:48:53+00:00",
+      "newest_utc": "2026-10-07T03:52:43+00:00",
+      "date_field": "web_date_utc"
+    },
+    {
+      "path": "data/derived/app_store/bradesco/reviews_reconciled.parquet",
+      "kind": "reconciled",
+      "platform": "app_store",
+      "bank": "bradesco",
+      "size_bytes": 491671,
+      "sha256": "f8c80cba2ed768bdc689e68339b79ede53dbeaa4501778d41c756039b435ab86",
+      "reviews": 3013,
+      "source_counts": {
+        "web_only": 2455,
+        "rss_web": 555,
+        "rss_only": 3
+      },
+      "rss_updated_utc_min": "2025-01-25T11:40:12+00:00",
+      "rss_updated_utc_max": "2026-10-04T11:23:36+00:00",
+      "web_date_utc_min": "2024-12-31T13:48:53+00:00",
+      "web_date_utc_max": "2026-10-07T03:52:43+00:00"
+    },
+    {
+      "path": "data/raw/app_store/santander/reviews_web.parquet",
+      "kind": "web",
+      "platform": "app_store",
+      "bank": "santander",
+      "size_bytes": 548361,
+      "sha256": "af6d3504ef9db69dd1969e1faa91c4b3dac638761b0f824e7fb130c4da62ef21",
+      "reviews": 3390,
+      "oldest_utc": "2024-12-30T15:16:58+00:00",
+      "newest_utc": "2026-10-07T03:31:53+00:00",
+      "date_field": "web_date_utc"
+    },
+    {
+      "path": "data/derived/app_store/santander/reviews_reconciled.parquet",
+      "kind": "reconciled",
+      "platform": "app_store",
+      "bank": "santander",
+      "size_bytes": 607160,
+      "sha256": "fc72c538dacf0b464d68367165480aefc68585d2105478a267d940ff5b56efbc",
+      "reviews": 3391,
+      "source_counts": {
+        "web_only": 3063,
+        "rss_web": 327,
+        "rss_only": 1
+      },
+      "rss_updated_utc_min": "2025-03-19T17:48:54+00:00",
+      "rss_updated_utc_max": "2026-10-03T23:02:09+00:00",
+      "web_date_utc_min": "2024-12-30T15:16:58+00:00",
+      "web_date_utc_max": "2026-10-07T03:31:53+00:00"
     },
     {
       "path": "data/raw/app_store/inter/reviews_web.parquet",
