@@ -11,7 +11,7 @@ from urllib.error import HTTPError
 
 from scripts.collect.app_store_web import (build_web_frame, collect_web, first_url,
                                            materialize_web, next_url, recover_continuity,
-                                           recover_source_end,
+                                           recover_direct_source_end, recover_source_end,
                                            replay_run)
 from scripts.collect.storage import sha256
 
@@ -87,6 +87,46 @@ def recovery_fixture(root, source, missing_tail=False, changed_review=False,
                   + [str(value) for value in (range(25, 35) if not missing_tail else range(26, 36))],
                   "probe_pages": pages, "rate_limit_responses": rate_limits}
     path = root / "checkpoint.json"
+    path.write_text(json.dumps(checkpoint))
+    return path
+
+
+def direct_recovery_fixture(root, source, newer=False):
+    probe_root = root / "direct_probes"
+    probe_root.mkdir()
+    records = []
+    all_ids = []
+    for sequence, offset in enumerate((20, 30)):
+        folder = probe_root / f"page_{sequence}"
+        folder.mkdir()
+        payload = timeline_page(range(offset, offset + 10), offset + 10)
+        if newer and sequence == 0:
+            payload["data"][0]["attributes"]["date"] = "2025-01-11T00:00:00Z"
+        body = folder / "response.body"
+        body.write_text(json.dumps(payload))
+        requested_at = (datetime(2025, 1, 11, tzinfo=timezone.utc)
+                        + timedelta(seconds=sequence * 30)).isoformat()
+        metadata = {"url": next_url(
+            f"/v1/catalog/br/apps/123/reviews?l=pt-BR&offset={offset}", "123", "br"),
+            "requested_at": requested_at, "received_at": requested_at,
+            "http_status": 200, "body_file": "response.body",
+            "body_sha256": sha256(body)}
+        (folder / "probe.json").write_text(json.dumps(metadata))
+        records.append({"offset": offset, "probe_dir": str(folder),
+                        "body_file": str(body), "body_sha256": metadata["body_sha256"]})
+        all_ids.extend(str(value) for value in range(offset, offset + 10))
+    canonical = root / "raw/test/reviews_web.parquet"
+    checkpoint = {"kind": "app_store_web_direct_source_end_probe", "version": 1,
+                  "bank": "test", "app_id": "123", "storefront": "br",
+                  "source_run": str(source), "source_journal_sha256": sha256(source / "pages.jsonl"),
+                  "source_last_offset": 10,
+                  "canonical_web_parquet": str(canonical),
+                  "canonical_web_sha256": sha256(canonical),
+                  "probe_pages": records, "new_review_ids": all_ids,
+                  "next_offset": 40,
+                  "next_url": next_url("/v1/catalog/br/apps/123/reviews?l=pt-BR&offset=40",
+                                       "123", "br")}
+    path = root / "direct_checkpoint.json"
     path.write_text(json.dumps(checkpoint))
     return path
 
@@ -326,6 +366,68 @@ class WebCollectorTests(unittest.TestCase):
                 self.assertEqual(calls[0], state["next_url"])
                 self.assertEqual(len(replay_run(continued, "123", "br")["ids"]), 45)
                 self.assertEqual(sha256(canonical), before)
+
+    def test_direct_source_end_imports_adjacent_new_pages_and_resumes(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            with patch("scripts.collect.app_store_web.RUNS_ROOT", root / "runs"), \
+                 patch("scripts.collect.app_store_web.STAGING_ROOT", root / "staging"), \
+                 patch("scripts.collect.app_store_web.RAW_ROOT", root / "raw"), \
+                 patch("scripts.collect.app_store_web.SNAPSHOT_ROOT", root / "snapshots"):
+                source = self.make_source_end(root)
+                checkpoint = direct_recovery_fixture(root, source)
+                canonical = root / "raw/test/reviews_web.parquet"
+                before = sha256(canonical)
+                with patch("scripts.collect.app_store_web.urlopen",
+                           side_effect=AssertionError("No HTTP during import")):
+                    recovered = recover_direct_source_end(
+                        "test", "123", "br", date(2025, 1, 1), source, checkpoint)
+                state = replay_run(recovered, "123", "br", date(2025, 1, 1))
+                summary = json.loads((recovered / "summary.json").read_text())
+                self.assertEqual(summary["stop_reason"], "page_limit")
+                self.assertEqual(summary["next_offset"], 40)
+                self.assertEqual(summary["pages_http_200"], 4)
+                self.assertEqual(len(state["ids"]), 40)
+                self.assertEqual(len(build_web_frame(recovered, "123", "br")), 40)
+                self.assertEqual(sha256(canonical), before)
+                calls = []
+                def fetch(request, timeout):
+                    calls.append(request.full_url)
+                    return Response(timeline_page(range(40, 50), 50))
+                with patch("scripts.collect.app_store_web.urlopen", side_effect=fetch):
+                    continued = collect_web("test", "123", "br", cutoff=date(2025, 1, 1),
+                                            delay_seconds=4, max_pages=1,
+                                            resume_from=recovered)
+                self.assertEqual(calls, [state["next_url"]])
+                self.assertEqual(len(replay_run(continued, "123", "br")["ids"]), 50)
+                self.assertEqual(sha256(canonical), before)
+
+    def test_direct_source_end_rejects_tampering_and_discontinuity(self):
+        for problem in ("body", "source", "canonical", "offset", "date"):
+            with self.subTest(problem=problem), TemporaryDirectory() as directory:
+                root = Path(directory)
+                with patch("scripts.collect.app_store_web.RUNS_ROOT", root / "runs"), \
+                     patch("scripts.collect.app_store_web.STAGING_ROOT", root / "staging"), \
+                     patch("scripts.collect.app_store_web.RAW_ROOT", root / "raw"), \
+                     patch("scripts.collect.app_store_web.SNAPSHOT_ROOT", root / "snapshots"):
+                    source = self.make_source_end(root)
+                    checkpoint = direct_recovery_fixture(root, source, newer=problem == "date")
+                    data = json.loads(checkpoint.read_text())
+                    if problem == "body":
+                        Path(data["probe_pages"][0]["body_file"]).write_bytes(b"tampered")
+                    elif problem == "source":
+                        data["source_journal_sha256"] = "0" * 64
+                    elif problem == "canonical":
+                        (root / "raw/test/reviews_web.parquet").write_bytes(b"changed")
+                    elif problem == "offset":
+                        data["probe_pages"][0]["offset"] = 30
+                    checkpoint.write_text(json.dumps(data))
+                    with patch("scripts.collect.app_store_web.urlopen",
+                               side_effect=AssertionError("No HTTP during import")):
+                        with self.assertRaises(ValueError):
+                            recover_direct_source_end(
+                                "test", "123", "br", date(2025, 1, 1),
+                                source, checkpoint)
 
     def test_recovery_rejects_missing_tail_before_new_ids(self):
         with TemporaryDirectory() as directory:

@@ -301,6 +301,13 @@ def replay_run(run, app_id, storefront, cutoff=None):
             if not recovery_tail_seen or not recovery_new_started:
                 raise ValueError("Recuperação não atravessou o último ID arquivado")
             recovery_active = False
+        if entry.get("direct_after_source_end"):
+            direct_offset = last_offset + len(previous_ids) if last_offset is not None else None
+            if (expected is not None or not confirmed or previous_ids == []
+                    or confirmed[-1].get("next_url") is not None
+                    or entry.get("offset") != direct_offset):
+                raise ValueError("Continuação direta sem source_end adjacente")
+            expected = url_at_offset(app_id, storefront, direct_offset)
         if entry.get("url") != expected or offset_from_url(expected) != entry.get("offset"):
             raise ValueError(f"Sequência Web inconsistente no offset {entry.get('offset')}")
         payload = json.loads((run / entry["body_file"]).read_bytes())
@@ -313,6 +320,8 @@ def replay_run(run, app_id, storefront, cutoff=None):
                 or check["review_count"] != entry.get("review_count")
                 or check["overlap_ids"] != entry.get("overlap_ids", [])):
             raise ValueError(f"Página Web inconsistente no offset {entry['offset']}")
+        if entry.get("direct_after_source_end") and entry.get("next_url") != check["next_url"]:
+            raise ValueError("Next da continuação direta diverge do payload")
         if recorded_anomalies:
             pending_anomaly_offset = entry["offset"]
             continue
@@ -543,6 +552,120 @@ def recover_source_end(bank, app_id, storefront, cutoff, source_run, checkpoint_
     """Import a verified direct-offset probe after a source-end response."""
     return _recover_preserved_pages(bank, app_id, storefront, cutoff, source_run,
                                     checkpoint_path, "source_end")
+
+
+def recover_direct_source_end(bank, app_id, storefront, cutoff, source_run, checkpoint_path):
+    """Import adjacent, wholly new pages preserved after a premature source end."""
+    source_run, checkpoint_path = Path(source_run), Path(checkpoint_path)
+    checkpoint = json.loads(checkpoint_path.read_text(encoding="utf-8"))
+    if (checkpoint.get("kind") != "app_store_web_direct_source_end_probe"
+            or checkpoint.get("version") != 1
+            or checkpoint.get("bank") != bank
+            or str(checkpoint.get("app_id")) != str(app_id)
+            or checkpoint.get("storefront") != storefront
+            or Path(checkpoint.get("source_run", "")).resolve() != source_run.resolve()
+            or sha256(source_run / "pages.jsonl") != checkpoint.get("source_journal_sha256")):
+        raise ValueError("Checkpoint de continuação direta diverge do source run")
+    prior = replay_run(source_run, app_id, storefront, cutoff)
+    summary = json.loads((source_run / "summary.json").read_text(encoding="utf-8"))
+    if (summary.get("stop_reason") != "source_end" or prior["next_url"] is not None
+            or prior["last_offset"] != checkpoint.get("source_last_offset")
+            or not prior["previous_ids"]):
+        raise ValueError("Source run não terminou no source_end esperado")
+    if cutoff and parse_utc(prior["previous_oldest"]).date() < cutoff:
+        raise ValueError("Source run já atravessou o corte")
+    canonical = RAW_ROOT / bank / "reviews_web.parquet"
+    assert_available(canonical)
+    if (Path(checkpoint.get("canonical_web_parquet", "")).resolve() != canonical.resolve()
+            or not canonical.is_file()
+            or sha256(canonical) != checkpoint.get("canonical_web_sha256")):
+        raise ValueError("Base Web canônica diverge do checkpoint")
+    records = checkpoint.get("probe_pages")
+    if not isinstance(records, list) or len(records) < 2:
+        raise ValueError("Continuação direta requer duas páginas preservadas")
+    next_offset = prior["last_offset"] + len(prior["previous_ids"])
+    seen = set(prior["ids"])
+    oldest = prior["previous_oldest"]
+    previous_ids = prior["previous_ids"]
+    checked = []
+    for record in records:
+        if record.get("offset") != next_offset:
+            raise ValueError("Offsets da continuação direta não são adjacentes")
+        folder = Path(record["probe_dir"])
+        metadata = json.loads((folder / "probe.json").read_text(encoding="utf-8"))
+        body = folder / metadata.get("body_file", "response.body")
+        if (metadata.get("http_status") != 200
+                or metadata.get("url") != url_at_offset(app_id, storefront, next_offset)
+                or Path(record["body_file"]).resolve() != body.resolve()
+                or sha256(body) != metadata.get("body_sha256")
+                or record.get("body_sha256") != metadata.get("body_sha256")):
+            raise ValueError("Payload ou URL do probe direto diverge")
+        payload = json.loads(body.read_bytes())
+        check = inspect_page(payload, next_offset, seen, oldest, app_id, storefront,
+                             cutoff, previous_ids, accept_overlap=False)
+        if (check["anomalies"] or check["review_count"] != 10
+                or check["duplicate_ids"] or check["next_offset"] != next_offset + 10
+                or check["before_cutoff"]):
+            raise ValueError("Página do probe direto sem continuidade validada")
+        checked.append((record, metadata, body, check))
+        seen.update(check["ids"])
+        oldest, previous_ids = check["date_oldest"], check["ids"]
+        next_offset = check["next_offset"]
+    if (checkpoint.get("next_offset") != next_offset
+            or checkpoint.get("next_url") != checked[-1][3]["next_url"]
+            or checkpoint.get("new_review_ids") != [id_ for _, _, _, check in checked
+                                                     for id_ in check["ids"]]):
+        raise ValueError("Checkpoint direto diverge das páginas preservadas")
+    archive_parent = RUNS_ROOT / bank
+    assert_available(archive_parent)
+    assert_local((STAGING_ROOT,), archive_parent)
+    name = f"{bank}_recent_direct_recovered_{datetime.now(timezone.utc):%Y%m%dT%H%M%S_%fZ}_{uuid.uuid4().hex[:6]}"
+    staging = STAGING_ROOT / bank / name
+    shutil.copytree(source_run, staging)
+    (staging / "summary.json").unlink()
+    copied_checkpoint = staging / "recovery_checkpoint.json"
+    shutil.copy2(checkpoint_path, copied_checkpoint)
+    if sha256(copied_checkpoint) != sha256(checkpoint_path):
+        raise RuntimeError("Hash divergente na cópia do checkpoint direto")
+    journal = staging / "pages.jsonl"
+    for index, (_, metadata, body, check) in enumerate(checked):
+        target = staging / "pages" / f"{len(prior['entries']) + index + 1:04d}_{uuid.uuid4().hex[:8]}.json"
+        shutil.copy2(body, target)
+        if sha256(target) != metadata["body_sha256"]:
+            raise RuntimeError("Hash divergente na cópia do probe direto")
+        entry = {"page": len(prior["entries"]) + index + 1,
+                 "url": metadata["url"], "requested_at": metadata["requested_at"],
+                 "received_at": metadata.get("received_at"),
+                 "http_status": 200, "content_type": metadata.get("content_type"),
+                 "body_file": str(target.relative_to(staging)),
+                 "body_sha256": metadata["body_sha256"], "body_bytes": target.stat().st_size,
+                 "direct_probe_dir": str(body.parent), **check}
+        if index == 0:
+            entry["direct_after_source_end"] = True
+        append_journal(journal, entry)
+    state = replay_run(staging, app_id, storefront, cutoff)
+    if (state["next_url"] != checkpoint["next_url"]
+            or state["last_offset"] != checked[-1][0]["offset"]
+            or len(state["ids"]) != len(prior["ids"]) + 10 * len(checked)):
+        raise ValueError("Run recuperado diverge do checkpoint direto")
+    save_json(staging / "progress.json", {
+        "updated_at": utc_now(), "last_confirmed_offset": state["last_offset"],
+        "next_url": state["next_url"], "next_offset": next_offset,
+        "unique_ids": len(state["ids"])})
+    save_json(staging / "summary.json", {
+        "app_id": str(app_id), "storefront": storefront, "sort": "recent", "bank": bank,
+        "started_at": utc_now(), "finished_at": utc_now(), "resume_source": str(source_run),
+        "recovery_mode": "direct_source_end", "recovery_checkpoint": str(checkpoint_path),
+        "recovery_checkpoint_sha256": sha256(copied_checkpoint),
+        "pages_attempted": len(state["entries"]), "pages_http_200": len(state["confirmed"]),
+        "recovery_imported_new_ids": 10 * len(checked),
+        "last_confirmed_offset": state["last_offset"], "next_offset": next_offset,
+        "unique_ids": len(state["ids"]), "stop_reason": "page_limit",
+        "cutoff": cutoff.isoformat() if cutoff else None})
+    replay_run(staging, app_id, storefront, cutoff)
+    if sha256(canonical) != checkpoint["canonical_web_sha256"]:
+        raise RuntimeError("Base Web canônica mudou durante a recuperação direta")
+    return archive_web_staging(staging, archive_parent)
 
 
 def recover_continuity(bank, app_id, storefront, cutoff, source_run, checkpoint_path):
@@ -825,6 +948,7 @@ def main():
     action.add_argument("--collect", action="store_true")
     action.add_argument("--from-run", type=Path)
     action.add_argument("--recover-source-end", type=Path, metavar="CHECKPOINT")
+    action.add_argument("--recover-direct-source-end", type=Path, metavar="CHECKPOINT")
     action.add_argument("--recover-continuity", type=Path, metavar="CHECKPOINT")
     parser.add_argument("--resume-from", type=Path)
     parser.add_argument("--delay-seconds", type=float, default=15.0)
@@ -849,6 +973,14 @@ def main():
             parser.error("--recover-source-end requer --resume-from SOURCE_RUN")
         run = recover_source_end(args.bank, app_id, storefront, cutoff,
                                  args.resume_from, args.recover_source_end)
+        print(run)
+        print((run / "summary.json").read_text(encoding="utf-8"))
+        return
+    if args.recover_direct_source_end:
+        if not args.resume_from:
+            parser.error("--recover-direct-source-end requer --resume-from SOURCE_RUN")
+        run = recover_direct_source_end(args.bank, app_id, storefront, cutoff,
+                                        args.resume_from, args.recover_direct_source_end)
         print(run)
         print((run / "summary.json").read_text(encoding="utf-8"))
         return
