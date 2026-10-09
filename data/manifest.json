@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-08T20:24:19.759956-03:00",
+  "generated_at": "2026-10-08T22:46:51.043701-03:00",
   "files": [
     {
       "path": "data/raw/google_play/nubank/reviews_raw.parquet",
@@ -757,6 +757,36 @@
       "rss_updated_utc_max": "2026-10-04T12:48:51+00:00",
       "web_date_utc_min": "2024-12-31T19:25:55+00:00",
       "web_date_utc_max": "2026-10-07T03:04:14+00:00"
+    },
+    {
+      "path": "data/raw/app_store/mercado_pago/reviews_web.parquet",
+      "kind": "web",
+      "platform": "app_store",
+      "bank": "mercado_pago",
+      "size_bytes": 671053,
+      "sha256": "91ed7d4299b91c98e97c3b242555d0f877fc29a28ba1df767f318d96f92b87f4",
+      "reviews": 4960,
+      "oldest_utc": "2024-12-30T17:18:26+00:00",
+      "newest_utc": "2026-10-07T16:15:15+00:00",
+      "date_field": "web_date_utc"
+    },
+    {
+      "path": "data/derived/app_store/mercado_pago/reviews_reconciled.parquet",
+      "kind": "reconciled",
+      "platform": "app_store",
+      "bank": "mercado_pago",
+      "size_bytes": 758913,
+      "sha256": "e61d4e038a713ae7bbb7d5717271b4eb1169aa04e3101707174ce1063ed50a8a",
+      "reviews": 4962,
+      "source_counts": {
+        "web_only": 4340,
+        "rss_web": 620,
+        "rss_only": 2
+      },
+      "rss_updated_utc_min": "2025-01-06T10:17:56+00:00",
+      "rss_updated_utc_max": "2026-10-04T13:32:39+00:00",
+      "web_date_utc_min": "2024-12-30T17:18:26+00:00",
+      "web_date_utc_max": "2026-10-07T16:15:15+00:00"
     },
     {
       "path": "data/raw/app_store/btg_pactual/reviews_web.parquet",
