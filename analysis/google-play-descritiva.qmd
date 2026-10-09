@@ -4,7 +4,7 @@ subtitle: "Notas e datas dos 11 aplicativos bancários"
 lang: pt-BR
 format:
   html:
-    toc: true
+    toc: false
     code-fold: true
 execute:
   echo: false

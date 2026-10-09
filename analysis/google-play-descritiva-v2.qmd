@@ -1,0 +1,170 @@
+---
+title: "Google Play: descrição das avaliações coletadas"
+subtitle: "Notas e datas dos 11 aplicativos bancários"
+lang: pt-BR
+format:
+  html:
+    toc: false
+    code-fold: true
+execute:
+  echo: false
+  warning: false
+jupyter: python3
+---
+
+Este relatório descreve as **avaliações guardadas no acervo local**, usando só `nota` e `data_avaliacao`; os comentários não são lidos. O recorte começa em **1º de janeiro de 2025**, para comparar os bancos no mesmo período. Os números descrevem o que foi coletado, não necessariamente tudo o que existe na loja.
+
+```{python}
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+from IPython.display import display, Markdown
+
+from google_play_data import (
+    br_int, br_num, complete_months, load_reviews,
+    monthly_counts, monthly_mean_score, score_summary,
+)
+
+reviews, audit = load_reviews()
+counts = monthly_counts(reviews)
+months = complete_months(reviews)
+summary = score_summary(reviews, counts)
+last_date = reviews["data_avaliacao"].max()
+
+def style_axis(axis, grid="x"):
+    axis.grid(axis=grid, color="#e5e7eb", linewidth=0.8)
+    axis.set_axisbelow(True)
+    for spine in axis.spines.values():
+        spine.set_visible(False)
+```
+
+## 1. O que temos?
+
+```{python}
+display(Markdown(
+    f"**{br_int(len(reviews))} avaliações** de **{len(audit)} bancos**, "
+    f"de {reviews['data_avaliacao'].min():%d/%m/%Y} a {last_date:%d/%m/%Y}."
+))
+table = audit.set_index("Banco")[["No recorte", "Primeira avaliação", "Última avaliação"]].copy()
+for column in ("Primeira avaliação", "Última avaliação"):
+    table[column] = table[column].dt.strftime("%d/%m/%Y")
+display(table.sort_values("No recorte", ascending=False))
+```
+
+::: {.callout-note collapse="true" title="Registros fora do recorte"}
+```{python}
+display(audit.set_index("Banco")[["Registros no arquivo", "Antes do recorte", "Nota inválida", "Data inválida"]])
+```
+**Antes do recorte** são avaliações válidas anteriores a 2025. Notas ou datas inválidas também ficam de fora.
+:::
+
+## 2. Quanto cada banco recebe?
+
+**Média/mês** é a média de avaliações nos meses completos do recorte (o último mês observado fica de fora por poder estar incompleto). Volume reflete a cobertura da coleta e a atividade de avaliação; não mede o tamanho da base de clientes.
+
+```{python}
+volume = summary["Média/mês"].sort_values()
+figure, axis = plt.subplots(figsize=(9, 5))
+bars = axis.barh(volume.index, volume.to_numpy(), color="#7c3aed")
+axis.bar_label(bars, labels=[br_int(v) for v in volume], padding=4)
+axis.set(xlim=(0, volume.max() * 1.15), xlabel="Avaliações por mês completo")
+style_axis(axis)
+figure.tight_layout()
+plt.show()
+```
+
+### Mês a mês
+
+Cada célula compara o mês com a média do próprio banco: **2** significa o dobro do volume habitual. Células claras indicam meses mais fracos. Serve para localizar períodos a investigar; o gráfico não explica a causa.
+
+```{python}
+ratio = counts.loc[months] / counts.loc[months].mean()
+ratio = ratio[summary["Média/mês"].sort_values(ascending=False).index]
+figure, axis = plt.subplots(figsize=(11, 5))
+image = axis.imshow(ratio.T.to_numpy(), aspect="auto", cmap="Purples", vmin=0, vmax=3)
+axis.set_yticks(range(len(ratio.columns)), labels=ratio.columns)
+step = 2
+axis.set_xticks(range(0, len(ratio), step), labels=[str(m) for m in ratio.index[::step]], rotation=45, ha="right")
+figure.colorbar(image, ax=axis, label="Volume do mês ÷ média do banco")
+figure.tight_layout()
+plt.show()
+```
+
+::: {.callout-note collapse="true" title="Tabela: avaliações por mês"}
+```{python}
+display(counts.rename_axis("Mês").astype(int))
+```
+:::
+
+## 3. Que notas recebem?
+
+```{python}
+table = summary[["Avaliações", "Nota média", "1 estrela (%)", "2 a 4 estrelas (%)", "5 estrelas (%)"]]
+display(table.sort_values("Nota média", ascending=False).round(2))
+```
+
+### Nota média
+
+```{python}
+means = summary["Nota média"].sort_values()
+figure, axis = plt.subplots(figsize=(9, 5))
+bars = axis.barh(means.index, means.to_numpy(), color="#16a34a")
+axis.bar_label(bars, labels=[br_num(v, 2) for v in means], padding=4)
+axis.set(xlim=(0, 5), xlabel="Nota média (1 a 5)")
+style_axis(axis)
+figure.tight_layout()
+plt.show()
+```
+
+### Distribuição das estrelas
+
+Bancos na mesma ordem da nota média. A parte cinza reúne as notas 2, 3 e 4.
+
+```{python}
+order = summary["Nota média"].sort_values().index
+one = summary.loc[order, "1 estrela (%)"]
+mid = summary.loc[order, "2 a 4 estrelas (%)"]
+five = summary.loc[order, "5 estrelas (%)"]
+figure, axis = plt.subplots(figsize=(9, 5))
+axis.barh(order, one, color="#ea580c", label="1 estrela")
+axis.barh(order, mid, left=one, color="#cbd5e1", label="2 a 4 estrelas")
+axis.barh(order, five, left=one + mid, color="#2563eb", label="5 estrelas")
+for row, (o, f) in enumerate(zip(one, five)):
+    axis.text(o / 2, row, br_num(o) + "%", color="white", ha="center", va="center", fontsize=8)
+    axis.text(100 - f / 2, row, br_num(f) + "%", color="white", ha="center", va="center", fontsize=8)
+axis.set(xlim=(0, 100), xlabel="Proporção das avaliações (%)")
+axis.legend(loc="upper center", bbox_to_anchor=(0.5, -0.12), ncol=3, frameon=False)
+style_axis(axis)
+figure.tight_layout()
+plt.show()
+```
+
+## 4. Como isso muda no tempo?
+
+Nota média mensal de cada banco, em meses completos. Meses com menos de 30 avaliações ficam em branco, porque a média seria instável. A escala é a mesma em todos os painéis.
+
+```{python}
+scores = monthly_mean_score(reviews).loc[months]
+banks = summary["Nota média"].sort_values(ascending=False).index
+figure, axes = plt.subplots(3, 4, figsize=(13, 8), sharex=True, sharey=True)
+x = np.arange(len(scores))
+for axis, bank in zip(axes.flat, banks):
+    axis.plot(x, scores[bank].to_numpy(), color="#16a34a", linewidth=2, marker="o", markersize=3)
+    axis.set_title(bank, fontsize=10)
+    axis.set_ylim(1, 5)
+    style_axis(axis, grid="y")
+for axis in axes.flat[len(banks):]:
+    axis.set_visible(False)
+step = 3
+axes[-1, 0].set_xticks(x[::step], labels=[str(m) for m in scores.index[::step]], rotation=45, ha="right", fontsize=8)
+figure.supylabel("Nota média do mês")
+figure.tight_layout()
+plt.show()
+```
+
+## 5. O que não sabemos?
+
+- **Cobertura:** o acervo contém o que a coleta alcançou. Um mês com poucos registros pode ser pouca avaliação ou lacuna de coleta; veja `docs/playstore-guide.md`.
+- **Satisfação:** a nota média descreve as avaliações deixadas, que costumam vir de quem quis opinar. Não representa todos os clientes.
+- **Causas:** picos de volume ou quedas de nota indicam um período para examinar, não o motivo. Explicações como campanha, atualização ruim ou sazonalidade precisam de outra fonte, como os textos das avaliações.
+- **Textos:** esta versão não lê comentários. Estudar um assunto específico exige pergunta e método próprios.

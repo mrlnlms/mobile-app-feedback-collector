@@ -1,0 +1,103 @@
+---
+title: "Google Play: descrição das avaliações coletadas"
+subtitle: "Notas e datas dos 11 aplicativos bancários"
+lang: pt-BR
+format:
+  html:
+    toc: false
+    code-fold: true
+execute:
+  echo: false
+  warning: false
+jupyter: python3
+---
+
+Este relatório começa pelo básico: **que dados temos em mãos**. Ainda não há análise de notas nem de volume; só uma descrição do que a coleta guardou. Nenhum comentário é exibido: os textos são lidos apenas para contar quantos estão preenchidos.
+
+```{python}
+import matplotlib.dates as mdates
+import matplotlib.pyplot as plt
+import pandas as pd
+from IPython.display import display, Markdown
+
+from google_play_data import br_int, profile_archive
+
+banks, fields, totals = profile_archive()
+```
+
+## 1. Visão geral
+
+```{python}
+display(Markdown(
+    f"São **{br_int(totals['registros'])} avaliações** de **{len(banks)} aplicativos bancários** "
+    f"da Google Play, de {banks['Primeira avaliação'].min():%d/%m/%Y} "
+    f"a {banks['Última avaliação'].max():%d/%m/%Y}. "
+    f"Cada avaliação tem um identificador próprio e nenhum se repete "
+    f"({br_int(totals['ids_unicos'])} identificadores únicos)."
+))
+```
+
+Cada linha do acervo é **uma avaliação** de um usuário sobre um aplicativo. Há um arquivo por banco, todos com os mesmos campos.
+
+## 2. Quanto há de cada banco
+
+```{python}
+table = banks.set_index("Banco").sort_values("Registros", ascending=False).copy()
+for column in ("Primeira avaliação", "Última avaliação"):
+    table[column] = table[column].dt.strftime("%d/%m/%Y")
+table["Registros"] = table["Registros"].map(br_int)
+display(table)
+```
+
+O período coberto mostra de quando a coleta tem registros. Todos os bancos terminam em outubro de 2026 e, exceto o Nubank, que começa em novembro de 2024, todos começam em 1º de janeiro de 2025.
+
+```{python}
+ordered = banks.sort_values("Registros")
+figure, axis = plt.subplots(figsize=(10, 5))
+axis.hlines(ordered["Banco"], ordered["Primeira avaliação"], ordered["Última avaliação"],
+            color="#7c3aed", linewidth=8)
+for _, row in ordered.iterrows():
+    axis.text(row["Última avaliação"] + pd.Timedelta(days=12), row["Banco"],
+              f"{br_int(row['Registros'])} avaliações", va="center", fontsize=9)
+axis.set_xlim(banks["Primeira avaliação"].min() - pd.Timedelta(days=15),
+              banks["Última avaliação"].max() + pd.Timedelta(days=170))
+axis.xaxis.set_major_formatter(mdates.DateFormatter("%m/%Y"))
+axis.grid(axis="x", color="#e5e7eb", linewidth=0.8)
+axis.set_axisbelow(True)
+for spine in axis.spines.values():
+    spine.set_visible(False)
+axis.set_xlabel("Período entre a primeira e a última avaliação de cada banco")
+figure.tight_layout()
+plt.show()
+```
+
+## 3. O que cada avaliação contém
+
+São oito campos. A coluna **Preenchido** mostra a parcela dos registros que têm valor naquele campo (no caso dos textos, valor não vazio).
+
+```{python}
+descriptions = {
+    "id_review": "Identificador único da avaliação.",
+    "usuario": "Nome público de quem avaliou.",
+    "nota": "Nota dada ao aplicativo, de 1 a 5 estrelas.",
+    "data_avaliacao": "Data e hora em que a avaliação foi feita.",
+    "texto_avaliacao": "Comentário escrito pelo usuário.",
+    "resposta_dev": "Resposta do desenvolvedor, quando existe.",
+    "thumbs_up": "Quantidade de pessoas que marcaram a avaliação como útil.",
+    "versao_app": "Versão do aplicativo associada à avaliação, quando informada.",
+}
+types = {"str": "texto", "int64": "número inteiro", "datetime64[us]": "data e hora"}
+table = fields.copy()
+table["Tipo"] = table["Tipo"].map(types).fillna(table["Tipo"])
+table["O que é"] = table["Campo"].map(descriptions)
+table["Preenchido"] = table["Preenchido (%)"].map(lambda v: f"{v:.1f}%".replace(".", ","))
+table["Valores"] = [
+    f"{int(low)} a {br_int(high)}" if pd.notna(low) else ""
+    for low, high in zip(table["Mínimo"], table["Máximo"])
+]
+display(table.set_index("Campo")[["O que é", "Tipo", "Preenchido", "Valores"]])
+```
+
+- **`nota`, `data_avaliacao` e `thumbs_up`** são numéricos ou temporais, e por isso se prestam a contagens, médias e séries no tempo.
+- **`texto_avaliacao`, `usuario` e `resposta_dev`** são texto livre; exigem outro tipo de tratamento.
+- **`resposta_dev` e `versao_app`** têm lacunas esperadas: nem toda avaliação recebe resposta, e nem toda traz a versão.

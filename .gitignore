@@ -33,5 +33,6 @@
 /analysis/output/
 /analysis/app-store-output
 /analysis/app-store-output/
+/analysis/*-output
 # Legacy report access links, removed by archive_setup.
 /analysis/google-play-descritiva-output
